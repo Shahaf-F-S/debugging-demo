@@ -13,7 +13,8 @@ For every ticket:
 6. **Hunt the family:** look for the same mistake elsewhere in the code.
 
 Useful tools: the debugger (breakpoints, Evaluate Expression), `python check.py`, the `FakeClock` fixture
-(`clock.advance(days=31)`), the sqlite3 command line or DB Browser for SQLite, and `git log` / `git bisect`.
+(`clock.advance(days=31)`), the sqlite3 command line or DB Browser for SQLite, `git log` / `git bisect`, and
+`python -m mypy peerpay` (it only checks the functions that have type hints).
 
 ---
 
@@ -55,6 +56,12 @@ Useful tools: the debugger (breakpoints, Evaluate Expression), `python check.py`
 >
 > Yossi logged in fine at 12:30. Since then he gets "wrong phone number or password". In the testing DB his
 > phone number is now `05*-***-4567`. Nobody edited his account.
+
+### C7 · My notifications screen is always empty
+> **From:** Noa
+>
+> I get push messages on my phone when someone sends me money, but the notifications screen in the app is
+> always empty. QA adds: it's empty for everyone, and it even "works" with a made-up token.
 
 ---
 

@@ -7,6 +7,8 @@ The backend of an app for sending money to friends. In this lab you debug and re
 
 ## Setup
 
+Python 3.12 or newer.
+
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
@@ -19,6 +21,7 @@ pip install -r requirements.txt
 python -m pytest           # the tests (all green, which doesn't mean much)
 python demo.py             # a scripted day against testing.db (re-created every time)
 python check.py            # checks the invariants of testing.db
+python -m mypy peerpay     # the type checker (it only checks functions that have type hints)
 ```
 
 `python demo.py --reuse` runs the day again on the existing `testing.db`, without re-creating it.
@@ -44,5 +47,6 @@ The test users and their test passwords are in `seed.py`. In tests, use the fixt
 Spoilers, for after the lab (or for teachers):
 
 - [docs/debugging-lab.md](docs/debugging-lab.md): the teacher's guide, with every bug, its fix and the lesson plan.
-- [solution/](solution/): the refactored reference solution, self-contained (`cd solution`, then `python -m pytest`).
+- [solution/](solution/): the refactored reference solution, fully typed and self-contained: `cd solution`,
+  then `python -m pytest` and `python -m mypy` (strict).
 - The git history: the tag `naive` is a correct version, and each later `bug(…)` commit plants one bug.

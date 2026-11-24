@@ -61,8 +61,11 @@ The database is a **testing database** (`testing.db`), not production data.
 - **§10 Statements.** A statement shows the other party's phone number masked (`05*-***-4567`). Producing a
   statement never changes stored data.
 - **§11 Notifications.** Each event (sent, accepted, declined, cancelled, expired) is announced with its own
-  template, to the user it concerns.
+  template, to the user it concerns. A logged-in user's notification list shows exactly the notifications
+  sent to them; without a valid login it is an error.
 - **§12 Cancel.** "Cancel my last transfer" cancels the sender's **most recently created** pending transfer.
+- **§13 Types.** Every function and method has complete, modern type hints, and `mypy --strict` reports
+  no errors. A value of the wrong type is a bug the type checker finds, not the user.
 
 ## Worked example
 
