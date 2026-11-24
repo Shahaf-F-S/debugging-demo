@@ -4,14 +4,15 @@ import hmac
 import os
 
 from .errors import LoginFailed, ValidationError
-from .validation import normalize_phone, validate_registration
+from .validation import parse_registration
+from .values import Password, PhoneNumber
 
 ITERATIONS = 600_000
 
 
-def hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, ITERATIONS)
+def hash_password(password: Password) -> str:
+    salt = os.urandom(16)                       # per user, stored inside the hash below
+    digest = hashlib.pbkdf2_hmac("sha256", password.value.encode(), salt, ITERATIONS)
     return f"pbkdf2_sha256${ITERATIONS}${salt.hex()}${digest.hex()}"
 
 
@@ -22,19 +23,19 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def register(wallet, phone, name, bank_account, password) -> int:
-    phone = normalize_phone(phone)
-    errors = validate_registration(phone, name, bank_account, password, wallet.bank)
-    if not errors and wallet.users.by_phone(phone) is not None:
-        errors.append("this phone number is already registered")
-    if errors:
-        raise ValidationError(errors)
+    form = parse_registration(phone, name, bank_account, password, wallet.bank)
+    if wallet.users.by_phone(form["phone"]) is not None:
+        raise ValidationError(["this phone number is already registered"])
     with wallet.conn:
-        user = wallet.users.add(phone, name.strip(), bank_account, hash_password(password))
+        user = wallet.users.add(form["phone"], form["name"], form["bank_account"], hash_password(form["password"]))
     return user.id
 
 
 def login(wallet, phone, password) -> int:
-    user = wallet.users.by_phone(normalize_phone(phone))
+    try:
+        user = wallet.users.by_phone(PhoneNumber.parse(phone))
+    except ValidationError:
+        raise LoginFailed() from None
     if user is None or not verify_password(password, user.password_hash):
         raise LoginFailed()
     with wallet.conn:

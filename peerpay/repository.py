@@ -4,6 +4,7 @@ from datetime import datetime
 
 from .models import Account, Transfer, User
 from .money import Money
+from .values import BankAccount, PhoneNumber
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -56,7 +57,7 @@ def _time(text):
 
 
 def _user(row) -> User:
-    return User(row["id"], row["phone"], row["name"], row["bank_account"], row["password_hash"],
+    return User(row["id"], PhoneNumber(row["phone"]), row["name"], BankAccount(row["bank_account"]), row["password_hash"],
                 _time(row["last_login"]))
 
 
@@ -72,10 +73,10 @@ class UserDirectory:
         self.conn = conn
         self._cache = {}
 
-    def add(self, phone, name, bank_account, password_hash) -> User:
+    def add(self, phone: PhoneNumber, name, bank_account: BankAccount, password_hash) -> User:
         cur = self.conn.execute(
             "INSERT INTO users (phone, name, bank_account, password_hash) VALUES (?, ?, ?, ?)",
-            (phone, name, bank_account, password_hash),
+            (str(phone), name, str(bank_account), password_hash),
         )
         self.conn.execute("INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,))
         return self.get(cur.lastrowid)
@@ -88,15 +89,15 @@ class UserDirectory:
             self._cache[user_id] = _user(row)
         return self._cache[user_id]
 
-    def by_phone(self, phone) -> User | None:
-        row = self.conn.execute("SELECT id FROM users WHERE phone = ?", (phone,)).fetchone()
+    def by_phone(self, phone: PhoneNumber) -> User | None:
+        row = self.conn.execute("SELECT id FROM users WHERE phone = ?", (str(phone),)).fetchone()
         return self.get(row["id"]) if row else None
 
     def save(self, user: User) -> None:
         self.conn.execute(
             "UPDATE users SET phone = ?, name = ?, bank_account = ?, password_hash = ?, last_login = ?"
             " WHERE id = ?",
-            (user.phone, user.name, user.bank_account, user.password_hash,
+            (str(user.phone), user.name, str(user.bank_account), user.password_hash,
              _iso(user.last_login) if user.last_login else None, user.id),
         )
 

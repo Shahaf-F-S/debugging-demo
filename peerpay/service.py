@@ -2,11 +2,11 @@
 from datetime import timedelta
 
 from .errors import (InsufficientFunds, NotAllowed, NothingToCancel, TransferExpired,
-                     TransferNotFound, UnknownRecipient, ValidationError)
+                     TransferNotFound, UnknownRecipient)
 from .models import ACCEPTED, CANCELLED, DECLINED, EXPIRED, PENDING
 from .money import ZERO, Money
 from .repository import Repository, UserDirectory
-from .validation import mask_phone, validate_send
+from .values import Note, PhoneNumber
 
 EXPIRY = timedelta(days=30)
 
@@ -24,8 +24,7 @@ class WalletService:
         return self.repo.account(user_id).balance
 
     def top_up(self, user_id, amount: Money):
-        if not amount.is_positive():
-            raise ValidationError(["amount must be positive"])
+        """``amount`` was validated (positive) by the caller."""
         user = self.users.get(user_id)
         amount = self.bank.pull(user.bank_account, amount)
         with self.conn:
@@ -34,10 +33,8 @@ class WalletService:
             self.repo.save_account(account)
             self.repo.add_ledger(user_id, amount, "deposit", self.clock())
 
-    def send(self, sender_id, phone, amount: Money, note=""):
-        errors = validate_send(amount, phone, note)
-        if errors:
-            raise ValidationError(errors)
+    def send(self, sender_id, phone: PhoneNumber, amount: Money, note: Note):
+        """The input was validated by the caller (validation.parse_send); here are the rules that need data."""
         recipient = self.users.by_phone(phone)
         if recipient is None:
             raise UnknownRecipient(phone)
@@ -49,7 +46,7 @@ class WalletService:
                 raise InsufficientFunds()
             sender.balance -= amount
             self.repo.save_account(sender)
-            transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note, self.clock())
+            transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, str(note), self.clock())
             self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
         self.bus.publish("sent", transfer)
         return transfer
@@ -102,7 +99,7 @@ class WalletService:
             other = self.users.get(transfer.other_party(user_id))
             direction = "from" if transfer.recipient_id == user_id else "to"
             lines.append(f"#{transfer.id} {transfer.status:<9} {str(transfer.amount):>10}"
-                         f"  {direction} {other.name} ({mask_phone(other.phone)})")
+                         f"  {direction} {other.name} ({other.phone.masked()})")
         return {
             "received_count": len(received),
             "received_total": sum((t.amount for t in received), ZERO),

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .money import Money
+from .values import BankAccount, PhoneNumber
 
 # Transfer statuses (DESIGN.md §5)
 PENDING = "PENDING"
@@ -15,9 +16,9 @@ EXPIRED = "EXPIRED"
 @dataclass
 class User:
     id: int
-    phone: str
+    phone: PhoneNumber
     name: str
-    bank_account: str
+    bank_account: BankAccount
     password_hash: str
     last_login: datetime | None = None
 

@@ -10,7 +10,7 @@ from .events import EventBus, Notifier, wire_notifications
 from .money import Money
 from .repository import connect
 from .service import EXPIRY, WalletService
-from .validation import normalize_phone
+from .validation import parse_send, positive
 
 
 def _error(e: WalletError) -> dict:
@@ -64,14 +64,16 @@ class PeerPayAPI:
 
     def top_up(self, token, amount_text):
         try:
-            self.wallet.top_up(self._user_id(token), Money.parse(amount_text))
+            self.wallet.top_up(self._user_id(token), positive(Money.parse(amount_text)))
         except WalletError as e:
             return _error(e)
         return {"ok": True}
 
     def send(self, token, phone, amount_text, note=""):
         try:
-            transfer = self.wallet.send(self._user_id(token), normalize_phone(phone), Money.parse(amount_text), note)
+            user_id = self._user_id(token)
+            request = parse_send(phone, amount_text, note)
+            transfer = self.wallet.send(user_id, request["recipient"], request["amount"], request["note"])
         except WalletError as e:
             return _error(e)
         return {"ok": True, "transfer_id": transfer.id, "message": "Sent ✓"}

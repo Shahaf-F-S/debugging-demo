@@ -7,13 +7,13 @@ from pathlib import Path
 
 from peerpay.api import PeerPayAPI
 from peerpay.money import Money
-from peerpay.validation import normalize_phone
+from peerpay.values import PhoneNumber
 
 
 def credit(db_path, phone, amount_text, reason):
     api = PeerPayAPI(db_path)
     try:
-        user = api.wallet.users.by_phone(normalize_phone(phone))
+        user = api.wallet.users.by_phone(PhoneNumber.parse(phone))
         if user is None:
             raise SystemExit(f"no user with phone number {phone}")
         api.wallet.adjust(user.id, Money.parse(amount_text), reason)
