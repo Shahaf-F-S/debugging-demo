@@ -11,13 +11,16 @@ This document is the source of truth: when the code and this document disagree, 
 
 | Module | Responsibility |
 |---|---|
-| `peerpay/api.py` | One method per request. Turns text input into values, and results or errors into dicts. |
+| `peerpay/api.py` | One method per request. Parses text into value objects; `@endpoint` turns results or errors into dicts. |
 | `peerpay/auth.py` | Registration, login, password hashing. |
-| `peerpay/service.py` | The use cases: top up, send, accept, decline, cancel, expire, statement. |
-| `peerpay/repository.py` | All SQL. |
-| `peerpay/validation.py` | Input checks and phone-number helpers. |
-| `peerpay/money.py` | Parsing and formatting amounts. |
-| `peerpay/models.py` | The data: users, accounts, transfers. |
+| `peerpay/commands.py` | `TopUp`, `SendTransfer`: one object per use case that moves money. |
+| `peerpay/service.py` | The use cases, each in one unit of work. |
+| `peerpay/repository.py` | All SQL: `UnitOfWork`, `UserRepo`, `LedgerRepo`, `TransferRepo`. |
+| `peerpay/validation.py` | Parses one request, collecting all of its problems. |
+| `peerpay/values.py` | Value objects: `PhoneNumber`, `Note`, `BankAccount`, `Password`. |
+| `peerpay/money.py` | `Money`: an exact amount of agorot. |
+| `peerpay/bank.py` | `BankAdapter`: the only code that speaks the bank's Decimal shekels. |
+| `peerpay/models.py` | `User`, `Transfer` and its rules (expiry, allowed status changes). |
 | `peerpay/events.py` | Publish/subscribe, and push notifications. |
 | `peerpay/errors.py` | Every error the service can raise. |
 | `tools/support.py` | The support team's tool for crediting a wallet. |
