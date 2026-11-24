@@ -53,7 +53,7 @@ class WalletService:
             return False
         sender.balance -= amount
         self.repo.save_account(sender)
-        transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note, self.clock())
+        transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note)
         self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
         self.bus.publish("sent", transfer)
         return True

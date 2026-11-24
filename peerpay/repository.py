@@ -129,7 +129,7 @@ class Repository:
 
     # --- transfers ------------------------------------------------------------------------
 
-    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at) -> Transfer:
+    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at=datetime.now()) -> Transfer:
         cur = self.conn.execute(
             "INSERT INTO transfers (sender_id, recipient_id, agorot, note, status, created_at)"
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
@@ -159,7 +159,7 @@ class Repository:
 
     def last_pending_of(self, sender_id) -> Transfer | None:
         row = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1",
+            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1",
             (sender_id,),
         ).fetchone()
         return _transfer(row) if row else None
