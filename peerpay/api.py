@@ -160,13 +160,7 @@ class PeerPayAPI:
         }
 
     def notifications(self, token):
-        try:
-            user_id = self._user_id(token)
-
-        except WalletError as e:
-            return _error(e)
-
-        return {"ok": True, "messages": self.notifier.messages_for(user_id)}
+        return {"ok": True, "messages": self.notifier.messages_for(token)}
 
     def run_expiry(self):
         """The nightly job (DESIGN.md §5). Called by the scheduler, not by users."""
