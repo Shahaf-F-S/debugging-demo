@@ -21,9 +21,10 @@ class WalletService:
         self.bus = bus
         self.users = UserDirectory(conn)
         self.repo = Repository(conn)
+        self._accounts = {}                 # user id -> Account, loaded once
 
     def balance(self, user_id) -> int:
-        return self.repo.account(user_id).balance
+        return self._account(user_id).balance
 
     def top_up(self, user_id, amount):
         if amount <= 0:
@@ -33,7 +34,7 @@ class WalletService:
             self.bank.pull(user.bank_account, Decimal(amount) / 100)
         except BankError as e:
             raise TopUpFailed(str(e)) from e
-        account = self.repo.account(user_id)
+        account = self._account(user_id)
         account.balance += amount
         self.repo.save_account(account)
         self.repo.add_ledger(user_id, amount, "deposit", self.clock())
@@ -48,7 +49,7 @@ class WalletService:
             return
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
-        sender = self.repo.account(sender_id)
+        sender = self._account(sender_id)
         if sender.balance < amount:
             return False
         sender.balance -= amount
@@ -66,7 +67,7 @@ class WalletService:
         if self.clock() - transfer.created_at >= EXPIRY:
             raise TransferExpired(transfer_id)
         self.repo.set_status(transfer.id, ACCEPTED, self.clock())
-        account = self.repo.account(user_id)
+        account = self._account(user_id)
         account.balance += transfer.amount
         self.repo.save_account(account)
         self.repo.add_ledger(user_id, transfer.amount, "transfer_in", self.clock(), transfer.id)
@@ -91,7 +92,7 @@ class WalletService:
 
     def adjust(self, user_id, amount, reason):
         """A manual correction by the support team: a ledger entry like any other."""
-        account = self.repo.account(user_id)
+        account = self._account(user_id)
         account.balance += amount
         self.repo.save_account(account)
         self.repo.add_ledger(user_id, amount, "adjustment", self.clock(), note=reason)
@@ -114,6 +115,11 @@ class WalletService:
             "lines": lines,
         }
 
+    def _account(self, user_id):
+        if user_id not in self._accounts:
+            self._accounts[user_id] = self.repo.account(user_id)
+        return self._accounts[user_id]
+
     def _pending_to(self, user_id, transfer_id):
         transfer = self.repo.transfer(transfer_id)
         if transfer is None or transfer.recipient_id != user_id or transfer.status != PENDING:
@@ -122,7 +128,7 @@ class WalletService:
 
     def _refund(self, transfer, status):
         self.repo.set_status(transfer.id, status, self.clock())
-        account = self.repo.account(transfer.sender_id)
+        account = self._account(transfer.sender_id)
         account.balance += transfer.amount
         self.repo.save_account(account)
         self.repo.add_ledger(transfer.sender_id, transfer.amount, "refund", self.clock(), transfer.id)
