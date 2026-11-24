@@ -77,6 +77,7 @@ class UserDirectory:
             (phone, name, bank_account, password_hash),
         )
         self.conn.execute("INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,))
+        self.conn.commit()
         return self.get(cur.lastrowid)
 
     def get(self, user_id) -> User | None:
@@ -98,6 +99,7 @@ class UserDirectory:
             (user.phone, user.name, user.bank_account, user.password_hash,
              _iso(user.last_login) if user.last_login else None, user.id),
         )
+        self.conn.commit()
 
 
 class Repository:
@@ -114,6 +116,7 @@ class Repository:
 
     def save_account(self, account: Account) -> None:
         self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?", (account.balance, account.user_id))
+        self.conn.commit()
 
     # --- ledger ---------------------------------------------------------------------------
 
@@ -122,6 +125,7 @@ class Repository:
             "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (user_id, agorot, kind, transfer_id, note, _iso(created_at)),
         )
+        self.conn.commit()
 
     # --- transfers ------------------------------------------------------------------------
 
@@ -131,6 +135,7 @@ class Repository:
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
             (sender_id, recipient_id, agorot, note, _iso(created_at)),
         )
+        self.conn.commit()
         return self.transfer(cur.lastrowid)
 
     def transfer(self, transfer_id) -> Transfer | None:
@@ -140,6 +145,7 @@ class Repository:
     def set_status(self, transfer_id, status, settled_at) -> None:
         self.conn.execute("UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
                           (status, _iso(settled_at), transfer_id))
+        self.conn.commit()
 
     def pending_to(self, user_id) -> list[Transfer]:
         rows = self.conn.execute(

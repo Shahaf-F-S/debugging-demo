@@ -28,8 +28,7 @@ def register(wallet, phone, name, bank_account, password) -> int:
         errors.append("this phone number is already registered")
     if errors:
         raise ValidationError(errors)
-    with wallet.conn:
-        user = wallet.users.add(phone, name.strip(), bank_account, hash_password(password))
+    user = wallet.users.add(phone, name.strip(), bank_account, hash_password(password))
     return user.id
 
 
@@ -37,7 +36,6 @@ def login(wallet, phone, password) -> int:
     user = wallet.users.by_phone(normalize_phone(phone))
     if user is None or not verify_password(password, user.password_hash):
         raise LoginFailed()
-    with wallet.conn:
-        user.last_login = wallet.clock()
-        wallet.users.save(user)
+    user.last_login = wallet.clock()
+    wallet.users.save(user)
     return user.id

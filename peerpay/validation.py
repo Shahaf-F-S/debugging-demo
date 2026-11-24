@@ -29,11 +29,9 @@ def validate_registration(phone, name, bank_account, password, bank) -> list[str
     return errors
 
 
-def validate_send(amount, recipient_phone, note, errors=[]) -> list[str]:
+def validate_send(amount, recipient_phone, errors=[]) -> list[str]:
     if amount <= 0:
         errors.append("amount must be positive")
     if not PHONE_RE.fullmatch(recipient_phone):
         errors.append("invalid phone number")
-    if len(note) > MAX_NOTE:
-        errors.append(f"note is longer than {MAX_NOTE} characters")
     return errors

@@ -33,14 +33,13 @@ class WalletService:
             self.bank.pull(user.bank_account, Decimal(amount) / 100)
         except BankError as e:
             raise TopUpFailed(str(e)) from e
-        with self.conn:
-            account = self.repo.account(user_id)
-            account.balance += amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, amount, "deposit", self.clock())
+        account = self.repo.account(user_id)
+        account.balance += amount
+        self.repo.save_account(account)
+        self.repo.add_ledger(user_id, amount, "deposit", self.clock())
 
     def send(self, sender_id, phone, amount, note=""):
-        errors = validate_send(amount, phone, note)
+        errors = validate_send(amount, phone)
         if errors:
             raise ValidationError(errors)
         recipient = self.users.by_phone(phone)
@@ -49,14 +48,13 @@ class WalletService:
             return
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
-        with self.conn:
-            sender = self.repo.account(sender_id)
-            if sender.balance < amount:
-                return False
-            sender.balance -= amount
-            self.repo.save_account(sender)
-            transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note, self.clock())
-            self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
+        sender = self.repo.account(sender_id)
+        if sender.balance < amount:
+            return False
+        sender.balance -= amount
+        self.repo.save_account(sender)
+        transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note, self.clock())
+        self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
         self.bus.publish("sent", transfer)
         return True
 
@@ -67,12 +65,11 @@ class WalletService:
         transfer = self._pending_to(user_id, transfer_id)
         if self.clock() - transfer.created_at >= EXPIRY:
             raise TransferExpired(transfer_id)
-        with self.conn:
-            self.repo.set_status(transfer.id, ACCEPTED, self.clock())
-            account = self.repo.account(user_id)
-            account.balance += transfer.amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, transfer.amount, "transfer_in", self.clock(), transfer.id)
+        self.repo.set_status(transfer.id, ACCEPTED, self.clock())
+        account = self.repo.account(user_id)
+        account.balance += transfer.amount
+        self.repo.save_account(account)
+        self.repo.add_ledger(user_id, transfer.amount, "transfer_in", self.clock(), transfer.id)
         self.bus.publish("accepted", transfer)
 
     def decline(self, user_id, transfer_id):
@@ -94,11 +91,10 @@ class WalletService:
 
     def adjust(self, user_id, amount, reason):
         """A manual correction by the support team: a ledger entry like any other."""
-        with self.conn:
-            account = self.repo.account(user_id)
-            account.balance += amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, amount, "adjustment", self.clock(), note=reason)
+        account = self.repo.account(user_id)
+        account.balance += amount
+        self.repo.save_account(account)
+        self.repo.add_ledger(user_id, amount, "adjustment", self.clock(), note=reason)
 
     def statement(self, user_id) -> dict:
         received = self.repo.transfers_to(user_id)
@@ -124,10 +120,9 @@ class WalletService:
         return transfer
 
     def _refund(self, transfer, status):
-        with self.conn:
-            self.repo.set_status(transfer.id, status, self.clock())
-            account = self.repo.account(transfer.sender_id)
-            account.balance += transfer.amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(transfer.sender_id, transfer.amount, "refund", self.clock(), transfer.id)
+        self.repo.set_status(transfer.id, status, self.clock())
+        account = self.repo.account(transfer.sender_id)
+        account.balance += transfer.amount
+        self.repo.save_account(account)
+        self.repo.add_ledger(transfer.sender_id, transfer.amount, "refund", self.clock(), transfer.id)
         self.bus.publish(status.lower(), transfer)
