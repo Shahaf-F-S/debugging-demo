@@ -76,7 +76,7 @@ class PeerPayAPI:
 
     def send(self, token, phone, amount_text, note=""):
         try:
-            transfer = self.wallet.send(
+            result = self.wallet.send(
                 self._user_id(token), normalize_phone(phone), parse_amount(amount_text),
                 note=note
             )
@@ -84,7 +84,14 @@ class PeerPayAPI:
         except WalletError as e:
             return _error(e)
 
-        return {"ok": True, "transfer_id": transfer.id, "message": "Sent ✓"}
+        if result is False:
+            return {
+                "ok": False,
+                "error": "insufficient_funds",
+                "message": "not enough money in your wallet"
+            }
+
+        return {"ok": True, "message": "Sent ✓"}
 
     def pending(self, token):
         try:

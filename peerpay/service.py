@@ -52,7 +52,9 @@ class WalletService:
         recipient = self.users.by_phone(phone)
 
         if recipient is None:
-            raise UnknownRecipient(phone)
+            print("no such user:", phone)
+
+            return
 
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
@@ -60,7 +62,7 @@ class WalletService:
         sender = self.repo.account(sender_id)
 
         if sender.balance < amount:
-            raise InsufficientFunds()
+            return False
 
         sender.balance -= amount
         self.repo.save_account(sender)
@@ -74,7 +76,7 @@ class WalletService:
             " Accept it within 30 days."
         )
 
-        return transfer
+        return True
 
     def pending(self, user_id):
         """Incoming pending transfers, as (transfer, sender name, masked sender phone) tuples."""
