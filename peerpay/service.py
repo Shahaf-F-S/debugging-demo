@@ -1,13 +1,14 @@
-"""PeerPay use cases (DESIGN.md §3–§5, §9–§12). Amounts are int agorot."""
+"""PeerPay use cases (DESIGN.md §3, §4, §7, §8). Amounts are int agorot."""
 
 from datetime import timedelta
+from decimal import Decimal
 
 from .bank_gateway import BankError
 from .errors import (
-    InsufficientFunds, NotAllowed, NothingToCancel, TopUpFailed, TransferExpired,
-    TransferNotFound, UnknownRecipient, ValidationError
+    InsufficientFunds, NotAllowed, TopUpFailed, TransferExpired, TransferNotFound,
+    UnknownRecipient, ValidationError
 )
-from .models import ACCEPTED, CANCELLED, DECLINED, EXPIRED, PENDING
+from .models import ACCEPTED, EXPIRED, PENDING
 from .money import format_amount
 from .repository import Repository, UserDirectory
 from .validation import mask_phone, validate_send
@@ -16,17 +17,16 @@ EXPIRY = timedelta(days=30)
 
 
 class WalletService:
-    def __init__(self, conn, bank, clock, bus):
+    def __init__(self, conn, bank, clock, notifier):
         self.conn = conn
         self.bank = bank
         self.clock = clock
-        self.bus = bus
+        self.notifier = notifier
         self.users = UserDirectory(conn)
         self.repo = Repository(conn)
-        self._accounts = {}                 # user id -> Account, loaded once
 
     def balance(self, user_id):
-        return self._account(user_id).balance
+        return self.repo.account(user_id).balance
 
     def top_up(self, user_id, amount):
         if amount <= 0:
@@ -35,18 +35,18 @@ class WalletService:
         user = self.users.get(user_id)
 
         try:
-            self.bank.pull(user.bank_account, amount)
+            self.bank.pull(user.bank_account, Decimal(amount) / 100)
 
         except BankError as e:
             raise TopUpFailed(str(e)) from e
 
-        account = self._account(user_id)
-        account.balance += amount
-        self.repo.save_account(account)
-        self.repo.add_ledger(user_id, amount, kind="deposit", created_at=self.clock())
+        with self.conn:
+            account = self.repo.account(user_id)
+            account.balance += amount
+            self.repo.save_account(account)
 
     def send(self, sender_id, phone, amount, note=""):
-        errors = validate_send(amount, phone)
+        errors = validate_send(amount, phone, note)
 
         if errors:
             raise ValidationError(errors)
@@ -54,31 +54,41 @@ class WalletService:
         recipient = self.users.by_phone(phone)
 
         if recipient is None:
-            print("no such user:", phone)
-
-            return
+            raise UnknownRecipient(phone)
 
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
 
-        sender = self._account(sender_id)
+        with self.conn:
+            sender = self.repo.account(sender_id)
 
-        if sender.balance < amount:
-            return False
+            if sender.balance < amount:
+                raise InsufficientFunds()
 
-        sender.balance -= amount
-        self.repo.save_account(sender)
-        transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note=note)
-        self.repo.add_ledger(
-            sender_id, -amount,
-            kind="transfer_out", created_at=self.clock(), transfer_id=transfer.id
+            sender.balance -= amount
+            self.repo.save_account(sender)
+            transfer = self.repo.insert_transfer(
+                sender_id, recipient.id, amount, note=note, created_at=self.clock()
+            )
+
+        self.notifier.push(
+            recipient.id,
+            f"You received {format_amount(amount)} (transfer #{transfer.id})."
+            " Accept it within 30 days."
         )
-        self.bus.publish("sent", transfer)
 
-        return True
+        return transfer
 
     def pending(self, user_id):
-        return self.repo.pending_to(user_id)
+        """Incoming pending transfers, as (transfer, sender name, masked sender phone) tuples."""
+
+        items = []
+
+        for transfer in self.repo.pending_to(user_id):
+            sender = self.users.get(transfer.sender_id)
+            items.append((transfer, sender.name, mask_phone(sender.phone)))
+
+        return items
 
     def accept(self, user_id, transfer_id):
         transfer = self._pending_to(user_id, transfer_id)
@@ -86,76 +96,36 @@ class WalletService:
         if self.clock() - transfer.created_at >= EXPIRY:
             raise TransferExpired(transfer_id)
 
-        self.repo.set_status(transfer.id, ACCEPTED, settled_at=self.clock())
-        account = self._account(user_id)
-        account.balance += transfer.amount
-        self.repo.save_account(account)
-        self.repo.add_ledger(
-            user_id, transfer.amount,
-            kind="transfer_in", created_at=self.clock(), transfer_id=transfer.id
+        with self.conn:
+            self.repo.set_status(transfer.id, ACCEPTED, settled_at=self.clock())
+            account = self.repo.account(user_id)
+            account.balance += transfer.amount
+            self.repo.save_account(account)
+
+        self.notifier.push(
+            transfer.sender_id,
+            f"Your transfer #{transfer.id} of {format_amount(transfer.amount)} was accepted."
         )
-        self.bus.publish("accepted", transfer)
-
-    def decline(self, user_id, transfer_id):
-        self._refund(self._pending_to(user_id, transfer_id), DECLINED)
-
-    def cancel_last(self, sender_id):
-        transfer = self.repo.last_pending_of(sender_id)
-
-        if transfer is None:
-            raise NothingToCancel()
-
-        self._refund(transfer, CANCELLED)
-
-        return transfer
 
     def expire_pending(self):
-        """The nightly job: refund every transfer that was not accepted in time."""
+        """The nightly job: refunds every transfer that was not accepted in time."""
 
         expired = self.repo.pending_created_before(self.clock() - EXPIRY)
 
         for transfer in expired:
-            self._refund(transfer, EXPIRED)
+            with self.conn:
+                self.repo.set_status(transfer.id, EXPIRED, settled_at=self.clock())
+                account = self.repo.account(transfer.sender_id)
+                account.balance += transfer.amount
+                self.repo.save_account(account)
 
-        return len(expired)
-
-    def adjust(self, user_id, amount, reason):
-        """A manual correction by the support team: a ledger entry like any other."""
-
-        account = self._account(user_id)
-        account.balance += amount
-        self.repo.save_account(account)
-        self.repo.add_ledger(
-            user_id, amount, kind="adjustment", created_at=self.clock(), note=reason
-        )
-
-    def statement(self, user_id):
-        received = self.repo.transfers_to(user_id)
-        sent = self.repo.transfers_from(user_id)
-        lines = []
-
-        for transfer in self.repo.transfers_of(user_id):
-            other = self.users.get(transfer.other_party(user_id))
-            other.phone = mask_phone(other.phone)
-            direction = "from" if transfer.recipient_id == user_id else "to"
-            lines.append(
-                f"#{transfer.id} {transfer.status:<9} {format_amount(transfer.amount):>10}"
-                f"  {direction} {other.name} ({other.phone})"
+            self.notifier.push(
+                transfer.sender_id,
+                f"Your transfer #{transfer.id} of {format_amount(transfer.amount)} expired."
+                " The money is back in your wallet."
             )
 
-        return {
-            "received_count": sum(1 for _ in received),
-            "received_total": sum(t.amount for t in received),
-            "sent_count": len(sent),
-            "sent_total": sum(t.amount for t in sent),
-            "lines": lines
-        }
-
-    def _account(self, user_id):
-        if user_id not in self._accounts:
-            self._accounts[user_id] = self.repo.account(user_id)
-
-        return self._accounts[user_id]
+        return len(expired)
 
     def _pending_to(self, user_id, transfer_id):
         transfer = self.repo.transfer(transfer_id)
@@ -168,14 +138,3 @@ class WalletService:
             raise TransferNotFound(transfer_id)
 
         return transfer
-
-    def _refund(self, transfer, status):
-        self.repo.set_status(transfer.id, status, settled_at=self.clock())
-        account = self._account(transfer.sender_id)
-        account.balance += transfer.amount
-        self.repo.save_account(account)
-        self.repo.add_ledger(
-            transfer.sender_id, transfer.amount,
-            kind="refund", created_at=self.clock(), transfer_id=transfer.id
-        )
-        self.bus.publish(status.lower(), transfer)

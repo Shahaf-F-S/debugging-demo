@@ -1,16 +1,15 @@
 """The PeerPay API: one method per request. Every method returns a JSON-ready dict."""
 
 import secrets
-from datetime import timedelta
 
 from . import auth
 from .bank_gateway import MockBank
 from .clock import SystemClock
 from .errors import NotLoggedIn, WalletError
-from .events import EventBus, Notifier, wire_notifications
 from .money import format_amount, parse_amount
+from .notifier import Notifier
 from .repository import connect
-from .service import WalletService
+from .service import EXPIRY, WalletService
 from .validation import normalize_phone
 
 
@@ -21,11 +20,10 @@ def _error(e):
 class PeerPayAPI:
     def __init__(self, db_path, bank=None, clock=None):
         self.conn = connect(db_path)
-        self.clock = clock or SystemClock()
         self.notifier = Notifier()
-        bus = EventBus()
-        wire_notifications(bus, self.notifier)
-        self.wallet = WalletService(self.conn, bank or MockBank(db_path), self.clock, bus)
+        self.wallet = WalletService(
+            self.conn, bank or MockBank(db_path), clock or SystemClock(), self.notifier
+        )
         self._sessions = {}                     # token -> user id
 
     def close(self):
@@ -78,7 +76,7 @@ class PeerPayAPI:
 
     def send(self, token, phone, amount_text, note=""):
         try:
-            result = self.wallet.send(
+            transfer = self.wallet.send(
                 self._user_id(token), normalize_phone(phone), parse_amount(amount_text),
                 note=note
             )
@@ -86,18 +84,11 @@ class PeerPayAPI:
         except WalletError as e:
             return _error(e)
 
-        if result is False:
-            return {
-                "ok": False,
-                "error": "insufficient_funds",
-                "message": "not enough money in your wallet"
-            }
-
-        return {"ok": True, "message": "Sent ✓"}
+        return {"ok": True, "transfer_id": transfer.id, "message": "Sent ✓"}
 
     def pending(self, token):
         try:
-            transfers = self.wallet.pending(self._user_id(token))
+            items = self.wallet.pending(self._user_id(token))
 
         except WalletError as e:
             return _error(e)
@@ -107,12 +98,13 @@ class PeerPayAPI:
             "pending": [
                 {
                     "id": t.id,
-                    "from": self.wallet.users.get(t.sender_id).name,
+                    "from": name,
+                    "phone": phone,
                     "amount": format_amount(t.amount),
                     "note": t.note,
-                    "expires_at": (t.created_at + timedelta(days=31)).isoformat()   # a month
+                    "expires_at": (t.created_at + EXPIRY).isoformat()
                 }
-                for t in transfers
+                for t, name, phone in items
             ]
         }
 
@@ -125,44 +117,16 @@ class PeerPayAPI:
 
         return {"ok": True}
 
-    def decline(self, token, transfer_id):
-        try:
-            self.wallet.decline(self._user_id(token), transfer_id)
-
-        except WalletError as e:
-            return _error(e)
-
-        return {"ok": True}
-
-    def cancel_last(self, token):
-        try:
-            transfer = self.wallet.cancel_last(self._user_id(token))
-
-        except WalletError as e:
-            return _error(e)
-
-        return {"ok": True, "transfer_id": transfer.id}
-
-    def statement(self, token):
-        try:
-            s = self.wallet.statement(self._user_id(token))
-
-        except WalletError as e:
-            return _error(e)
-
-        return {
-            "ok": True,
-            "received_count": s["received_count"],
-            "received_total": format_amount(s["received_total"]),
-            "sent_count": s["sent_count"],
-            "sent_total": format_amount(s["sent_total"]),
-            "lines": s["lines"]
-        }
-
     def notifications(self, token):
-        return {"ok": True, "messages": self.notifier.messages_for(token)}
+        try:
+            user_id = self._user_id(token)
+
+        except WalletError as e:
+            return _error(e)
+
+        return {"ok": True, "messages": self.notifier.messages_for(user_id)}
 
     def run_expiry(self):
-        """The nightly job (DESIGN.md §5). Called by the scheduler, not by users."""
+        """The nightly job (DESIGN.md §4). Called by the scheduler, not by users."""
 
         return {"ok": True, "expired": self.wallet.expire_pending()}

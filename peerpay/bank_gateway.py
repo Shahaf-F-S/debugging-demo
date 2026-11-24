@@ -46,8 +46,8 @@ class MockBank:
 
         return sum(int(c) for c in account_number if c.isdigit()) % 10 == 0
 
-    def pull(self, account_number: str, amount: Decimal | int | str) -> Receipt:
-        """Pull ``amount`` SHEKELS (a Decimal, or anything Decimal() accepts) from a bank account.
+    def pull(self, account_number: str, amount: Decimal) -> Receipt:
+        """Pulls ``amount`` SHEKELS, a Decimal with two decimal places, from a user's bank account.
 
         Returns a Receipt; ``Receipt.amount`` is the Decimal number of shekels that was pulled.
         """

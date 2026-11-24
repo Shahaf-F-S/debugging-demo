@@ -3,11 +3,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-# Transfer statuses (DESIGN.md §5)
+# Transfer statuses (DESIGN.md §4)
 PENDING = "PENDING"
 ACCEPTED = "ACCEPTED"
-DECLINED = "DECLINED"
-CANCELLED = "CANCELLED"
 EXPIRED = "EXPIRED"
 
 
@@ -37,6 +35,3 @@ class Transfer:
     status: str
     created_at: datetime
     settled_at: datetime | None = None
-
-    def other_party(self, user_id):
-        return self.recipient_id if user_id == self.sender_id else self.sender_id

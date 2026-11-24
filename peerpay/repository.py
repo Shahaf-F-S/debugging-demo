@@ -1,4 +1,4 @@
-"""All SQL of PeerPay lives here (DESIGN.md §8). Money columns hold agorot."""
+"""All SQL of PeerPay lives here. Money columns hold agorot."""
 
 import sqlite3
 from datetime import datetime
@@ -27,15 +27,6 @@ CREATE TABLE IF NOT EXISTS transfers (
     status       TEXT NOT NULL,
     created_at   TEXT NOT NULL,
     settled_at   TEXT
-);
-CREATE TABLE IF NOT EXISTS ledger (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
-    agorot      INTEGER NOT NULL,
-    kind        TEXT NOT NULL,
-    transfer_id INTEGER REFERENCES transfers(id),
-    note        TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL
 );
 """
 
@@ -95,7 +86,6 @@ class UserDirectory:
         self.conn.execute(
             "INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,)
         )
-        self.conn.commit()
 
         return self.get(cur.lastrowid)
 
@@ -124,11 +114,10 @@ class UserDirectory:
                 _iso(user.last_login) if user.last_login else None, user.id
             )
         )
-        self.conn.commit()
 
 
 class Repository:
-    """Accounts, ledger and transfers."""
+    """Accounts and transfers."""
 
     def __init__(self, conn):
         self.conn = conn
@@ -145,23 +134,13 @@ class Repository:
             "UPDATE accounts SET balance = ? WHERE user_id = ?",
             (account.balance, account.user_id)
         )
-        self.conn.commit()
 
-    def add_ledger(self, user_id, agorot, kind, created_at, transfer_id=None, note=""):
-        self.conn.execute(
-            "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, agorot, kind, transfer_id, note, _iso(created_at))
-        )
-        self.conn.commit()
-
-    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at=datetime.now()):
+    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at):
         cur = self.conn.execute(
             "INSERT INTO transfers (sender_id, recipient_id, agorot, note, status, created_at)"
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
             (sender_id, recipient_id, agorot, note, _iso(created_at))
         )
-        self.conn.commit()
 
         return self.transfer(cur.lastrowid)
 
@@ -175,7 +154,6 @@ class Repository:
             "UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
             (status, _iso(settled_at), transfer_id)
         )
-        self.conn.commit()
 
     def pending_to(self, user_id):
         rows = self.conn.execute(
@@ -189,46 +167,6 @@ class Repository:
         rows = self.conn.execute(
             "SELECT * FROM transfers WHERE status = 'PENDING' AND created_at <= ? ORDER BY id",
             (_iso(cutoff),)
-        )
-
-        return [_transfer(row) for row in rows]
-
-    def last_pending_of(self, sender_id):
-        row = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING'"
-            " ORDER BY created_at DESC LIMIT 1",
-            (sender_id,)
-        ).fetchone()
-
-        return _transfer(row) if row else None
-
-    def transfers_to(self, user_id):
-        """Accepted transfers that the user received, streamed instead of loaded all at once."""
-
-        rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'ACCEPTED' ORDER BY id",
-            (user_id,)
-        )
-
-        for row in rows:
-            yield _transfer(row)
-
-    def transfers_from(self, user_id):
-        """Accepted transfers that the user sent."""
-
-        rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'ACCEPTED' ORDER BY id",
-            (user_id,)
-        )
-
-        return [_transfer(row) for row in rows]
-
-    def transfers_of(self, user_id):
-        """Every transfer the user sent or received, in any status."""
-
-        rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? OR recipient_id = ? ORDER BY id",
-            (user_id, user_id)
         )
 
         return [_transfer(row) for row in rows]

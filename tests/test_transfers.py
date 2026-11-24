@@ -20,7 +20,9 @@ def test_sent_money_is_held_until_accepted(api, tokens):
 
     (item,) = api.pending(yossi)["pending"]
 
-    assert (item["from"], item["amount"], item["note"]) == ("Dana", "₪30.00", "pizza")
+    assert (item["from"], item["phone"], item["amount"], item["note"]) == (
+        "Dana", "05*-***-4321", "₪30.00", "pizza"
+    )
 
 
 def test_accept_credits_the_recipient(api, tokens):
@@ -30,25 +32,6 @@ def test_accept_credits_the_recipient(api, tokens):
 
     assert api.accept(yossi, api.pending(yossi)["pending"][0]["id"])["ok"]
     assert balance(api, yossi) == 30_00
-    assert api.pending(yossi)["pending"] == []
-
-
-def test_decline_refunds_the_sender(api, tokens):
-    dana, yossi = tokens["Dana"], tokens["Yossi"]
-    api.top_up(dana, "100")
-    api.send(dana, YOSSI[0], "30")
-
-    assert api.decline(yossi, api.pending(yossi)["pending"][0]["id"])["ok"]
-    assert balance(api, dana) == 100_00
-
-
-def test_sender_can_cancel_a_pending_transfer(api, tokens):
-    dana, yossi = tokens["Dana"], tokens["Yossi"]
-    api.top_up(dana, "100")
-    api.send(dana, YOSSI[0], "30")
-
-    assert api.cancel_last(dana)["ok"]
-    assert balance(api, dana) == 100_00
     assert api.pending(yossi)["pending"] == []
 
 

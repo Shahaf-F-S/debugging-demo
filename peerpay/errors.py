@@ -1,4 +1,4 @@
-"""Everything that can go wrong in PeerPay; the API turns these into error responses (§6)."""
+"""Everything that can go wrong in PeerPay; the API turns these into error responses (§5)."""
 
 
 class WalletError(Exception):
@@ -57,13 +57,6 @@ class TransferExpired(WalletError):
 
     def __init__(self, transfer_id):
         super().__init__(f"transfer #{transfer_id} has expired")
-
-
-class NothingToCancel(WalletError):
-    code = "nothing_to_cancel"
-
-    def __init__(self):
-        super().__init__("you have no pending transfer to cancel")
 
 
 class TopUpFailed(WalletError):
