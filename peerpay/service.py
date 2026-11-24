@@ -39,13 +39,12 @@ class WalletService:
         except BankError as e:
             raise TopUpFailed(str(e)) from e
 
-        with self.conn:
-            account = self.repo.account(user_id)
-            account.balance += amount
-            self.repo.save_account(account)
+        account = self.repo.account(user_id)
+        account.balance += amount
+        self.repo.save_account(account)
 
     def send(self, sender_id, phone, amount, note=""):
-        errors = validate_send(amount, phone, note)
+        errors = validate_send(amount, phone)
 
         if errors:
             raise ValidationError(errors)
@@ -58,17 +57,16 @@ class WalletService:
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
 
-        with self.conn:
-            sender = self.repo.account(sender_id)
+        sender = self.repo.account(sender_id)
 
-            if sender.balance < amount:
-                raise InsufficientFunds()
+        if sender.balance < amount:
+            raise InsufficientFunds()
 
-            sender.balance -= amount
-            self.repo.save_account(sender)
-            transfer = self.repo.insert_transfer(
-                sender_id, recipient.id, amount, note=note, created_at=self.clock()
-            )
+        sender.balance -= amount
+        self.repo.save_account(sender)
+        transfer = self.repo.insert_transfer(
+            sender_id, recipient.id, amount, note=note, created_at=self.clock()
+        )
 
         self.notifier.push(
             recipient.id,
@@ -95,11 +93,10 @@ class WalletService:
         if self.clock() - transfer.created_at >= EXPIRY:
             raise TransferExpired(transfer_id)
 
-        with self.conn:
-            self.repo.set_status(transfer.id, ACCEPTED, settled_at=self.clock())
-            account = self.repo.account(user_id)
-            account.balance += transfer.amount
-            self.repo.save_account(account)
+        self.repo.set_status(transfer.id, ACCEPTED, settled_at=self.clock())
+        account = self.repo.account(user_id)
+        account.balance += transfer.amount
+        self.repo.save_account(account)
 
         self.notifier.push(
             transfer.sender_id,
@@ -112,11 +109,10 @@ class WalletService:
         expired = self.repo.pending_created_before(self.clock() - EXPIRY)
 
         for transfer in expired:
-            with self.conn:
-                self.repo.set_status(transfer.id, EXPIRED, settled_at=self.clock())
-                account = self.repo.account(transfer.sender_id)
-                account.balance += transfer.amount
-                self.repo.save_account(account)
+            self.repo.set_status(transfer.id, EXPIRED, settled_at=self.clock())
+            account = self.repo.account(transfer.sender_id)
+            account.balance += transfer.amount
+            self.repo.save_account(account)
 
             self.notifier.push(
                 transfer.sender_id,

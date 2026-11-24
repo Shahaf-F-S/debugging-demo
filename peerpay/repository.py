@@ -86,6 +86,7 @@ class UserDirectory:
         self.conn.execute(
             "INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,)
         )
+        self.conn.commit()
 
         return self.get(cur.lastrowid)
 
@@ -114,6 +115,7 @@ class UserDirectory:
                 _iso(user.last_login) if user.last_login else None, user.id
             )
         )
+        self.conn.commit()
 
 
 class Repository:
@@ -134,6 +136,7 @@ class Repository:
             "UPDATE accounts SET balance = ? WHERE user_id = ?",
             (account.balance, account.user_id)
         )
+        self.conn.commit()
 
     def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at):
         cur = self.conn.execute(
@@ -141,6 +144,7 @@ class Repository:
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
             (sender_id, recipient_id, agorot, note, _iso(created_at))
         )
+        self.conn.commit()
 
         return self.transfer(cur.lastrowid)
 
@@ -154,6 +158,7 @@ class Repository:
             "UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
             (status, _iso(settled_at), transfer_id)
         )
+        self.conn.commit()
 
     def pending_to(self, user_id):
         rows = self.conn.execute(
