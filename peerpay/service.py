@@ -45,19 +45,20 @@ class WalletService:
             raise ValidationError(errors)
         recipient = self.users.by_phone(phone)
         if recipient is None:
-            raise UnknownRecipient(phone)
+            print("no such user:", phone)
+            return
         if recipient.id == sender_id:
             raise NotAllowed("you cannot send money to yourself")
         with self.conn:
             sender = self.repo.account(sender_id)
             if sender.balance < amount:
-                raise InsufficientFunds()
+                return False
             sender.balance -= amount
             self.repo.save_account(sender)
             transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note, self.clock())
             self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
         self.bus.publish("sent", transfer)
-        return transfer
+        return True
 
     def pending(self, user_id):
         return self.repo.pending_to(user_id)
