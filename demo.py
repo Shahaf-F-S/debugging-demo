@@ -24,7 +24,7 @@ def main(reuse: bool = False) -> None:
     api = PeerPayAPI(DB_PATH)
 
     try:
-        tokens = {}
+        tokens: dict[str, str] = {}
 
         for phone, name, _bank, password in TEST_USERS:
             response = api.login(phone, password)

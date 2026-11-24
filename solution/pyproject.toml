@@ -1,3 +1,8 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["peerpay", "tools", "tests", "check.py", "seed.py", "demo.py"]

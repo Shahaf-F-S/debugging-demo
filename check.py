@@ -39,7 +39,7 @@ def _one(conn: sqlite3.Connection, sql: str) -> int:
 
 
 def _problems(conn: sqlite3.Connection) -> list[str]:
-    problems = []
+    problems: list[str] = []
     tables = {
         name for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
