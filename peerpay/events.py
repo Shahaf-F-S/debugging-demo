@@ -1,6 +1,4 @@
 """A tiny publish/subscribe bus, and the notifier that turns events into push messages (DESIGN.md §11)."""
-import functools
-
 from .money import format_amount
 
 TEMPLATES = {
@@ -42,4 +40,4 @@ class Notifier:
 
 def wire_notifications(bus, notifier):
     for kind in TEMPLATES:
-        bus.subscribe(kind, functools.partial(notifier.push, kind))
+        bus.subscribe(kind, lambda transfer: notifier.push(kind, transfer))
