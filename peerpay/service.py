@@ -83,7 +83,8 @@ class WalletService:
 
         for transfer in self.repo.pending_to(user_id):
             sender = self.users.get(transfer.sender_id)
-            items.append((transfer, sender.name, mask_phone(sender.phone)))
+            sender.phone = mask_phone(sender.phone)
+            items.append((transfer, sender.name, sender.phone))
 
         return items
 
