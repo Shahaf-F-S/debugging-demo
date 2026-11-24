@@ -1,3 +1,5 @@
+import sqlite3
+
 from conftest import DANA
 
 
@@ -27,7 +29,9 @@ def test_wrong_password_is_rejected(api):
     assert api.login(DANA[0], "not-my-password")["error"] == "login_failed"
 
 
-def test_password_is_not_stored_in_plain_text(api):
+def test_password_is_not_stored_in_plain_text(api, db_path):
     api.register(*DANA)
-    (stored,) = api.conn.execute("SELECT password_hash FROM users").fetchone()
+    conn = sqlite3.connect(db_path)
+    (stored,) = conn.execute("SELECT password_hash FROM users").fetchone()
+    conn.close()
     assert DANA[3] not in stored

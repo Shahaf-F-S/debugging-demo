@@ -24,21 +24,23 @@ def verify_password(password: str, stored: str) -> bool:
 
 def register(wallet, phone, name, bank_account, password) -> int:
     form = parse_registration(phone, name, bank_account, password, wallet.bank)
-    if wallet.users.by_phone(form["phone"]) is not None:
-        raise ValidationError(["this phone number is already registered"])
-    with wallet.conn:
-        user = wallet.users.add(form["phone"], form["name"], form["bank_account"], hash_password(form["password"]))
-    return user.id
+    password_hash = hash_password(form["password"])            # slow on purpose: outside the transaction
+    with wallet.uow() as uow:
+        if uow.users.by_phone(form["phone"]) is not None:
+            raise ValidationError(["this phone number is already registered"])
+        return uow.users.add(form["phone"], form["name"], form["bank_account"], password_hash).id
 
 
 def login(wallet, phone, password) -> int:
     try:
-        user = wallet.users.by_phone(PhoneNumber.parse(phone))
+        phone = PhoneNumber.parse(phone)
     except ValidationError:
         raise LoginFailed() from None
-    if user is None or not verify_password(password, user.password_hash):
+    with wallet.uow() as uow:
+        user = uow.users.by_phone(phone)
+    if user is None or not verify_password(password, user.password_hash):   # slow: outside the transaction
         raise LoginFailed()
-    with wallet.conn:
+    with wallet.uow() as uow:
         user.last_login = wallet.clock()
-        wallet.users.save(user)
+        uow.users.save(user)
     return user.id

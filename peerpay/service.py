@@ -1,105 +1,125 @@
-"""PeerPay use cases (DESIGN.md §3–§5, §9–§12). Amounts are Money."""
-from datetime import timedelta
+"""PeerPay use cases (DESIGN.md §3–§5, §9–§12). Amounts are Money.
 
-from .errors import (InsufficientFunds, NotAllowed, NothingToCancel, TransferExpired,
-                     TransferNotFound, UnknownRecipient)
-from .models import ACCEPTED, CANCELLED, DECLINED, EXPIRED, PENDING
+Every use case runs in one UnitOfWork: it is completely done, or not done at all.
+Events are published only after the unit of work has committed.
+"""
+from collections.abc import Callable
+from datetime import datetime
+
+from .commands import SendTransfer, TopUp
+from .errors import InsufficientFunds, NotAllowed, NothingToCancel, TransferExpired, TransferNotFound, UnknownRecipient
+from .models import Status, Transfer
 from .money import ZERO, Money
-from .repository import Repository, UserDirectory
-from .values import Note, PhoneNumber
+from .repository import UnitOfWork
+from .values import PhoneNumber
 
-EXPIRY = timedelta(days=30)
+Clock = Callable[[], datetime]
 
 
 class WalletService:
-    def __init__(self, conn, bank, clock, bus):
-        self.conn = conn
+    def __init__(self, db_path, bank, clock: Clock, bus):
+        self.db_path = db_path
         self.bank = bank
         self.clock = clock
         self.bus = bus
-        self.users = UserDirectory(conn)
-        self.repo = Repository(conn)
+
+    def uow(self) -> UnitOfWork:
+        return UnitOfWork(self.db_path)
 
     def balance(self, user_id) -> Money:
-        return self.repo.account(user_id).balance
+        with self.uow() as uow:
+            return uow.repo.account(user_id).balance
 
-    def top_up(self, user_id, amount: Money):
-        """``amount`` was validated (positive) by the caller."""
-        user = self.users.get(user_id)
-        amount = self.bank.pull(user.bank_account, amount)
-        with self.conn:
-            account = self.repo.account(user_id)
-            account.balance += amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, amount, "deposit", self.clock())
+    def top_up(self, cmd: TopUp) -> None:
+        with self.uow() as uow:
+            user = uow.users.get(cmd.user_id)
+        pulled = self.bank.pull(user.bank_account, cmd.amount)       # outside the transaction: the bank is slow
+        with self.uow() as uow:
+            account = uow.repo.account(cmd.user_id)
+            account.balance += pulled
+            uow.repo.save_account(account)
+            uow.repo.add_ledger(cmd.user_id, pulled, "deposit", self.clock())
 
-    def send(self, sender_id, phone: PhoneNumber, amount: Money, note: Note):
-        """The input was validated by the caller (validation.parse_send); here are the rules that need data."""
-        recipient = self.users.by_phone(phone)
-        if recipient is None:
-            raise UnknownRecipient(phone)
-        if recipient.id == sender_id:
-            raise NotAllowed("you cannot send money to yourself")
-        with self.conn:
-            sender = self.repo.account(sender_id)
-            if sender.balance < amount:
+    def send(self, cmd: SendTransfer) -> Transfer:
+        with self.uow() as uow:
+            recipient = uow.users.by_phone(cmd.recipient)
+            if recipient is None:
+                raise UnknownRecipient(cmd.recipient)
+            if recipient.id == cmd.sender_id:
+                raise NotAllowed("you cannot send money to yourself")
+            sender = uow.repo.account(cmd.sender_id)
+            if sender.balance < cmd.amount:
                 raise InsufficientFunds()
-            sender.balance -= amount
-            self.repo.save_account(sender)
-            transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, str(note), self.clock())
-            self.repo.add_ledger(sender_id, -amount, "transfer_out", self.clock(), transfer.id)
+            sender.balance -= cmd.amount
+            uow.repo.save_account(sender)
+            transfer = uow.repo.insert_transfer(cmd.sender_id, recipient.id, cmd.amount, str(cmd.note), self.clock())
+            uow.repo.add_ledger(cmd.sender_id, -cmd.amount, "transfer_out", self.clock(), transfer.id)
         self.bus.publish("sent", transfer)
         return transfer
 
-    def pending(self, user_id):
-        return self.repo.pending_to(user_id)
+    def pending(self, user_id) -> list[tuple[Transfer, str]]:
+        """The user's incoming pending transfers, each with the sender's name."""
+        with self.uow() as uow:
+            return [(t, uow.users.get(t.sender_id).name) for t in uow.repo.pending_to(user_id)]
 
-    def accept(self, user_id, transfer_id):
-        transfer = self._pending_to(user_id, transfer_id)
-        if self.clock() - transfer.created_at >= EXPIRY:
-            raise TransferExpired(transfer_id)
-        with self.conn:
-            self.repo.set_status(transfer.id, ACCEPTED, self.clock())
-            account = self.repo.account(user_id)
+    def accept(self, user_id, transfer_id) -> None:
+        now = self.clock()
+        with self.uow() as uow:
+            transfer = self._pending_to(uow, user_id, transfer_id)
+            if transfer.is_expired(now):
+                raise TransferExpired(transfer_id)
+            transfer = transfer.moved_to(Status.ACCEPTED, now)
+            uow.repo.save_status(transfer)
+            account = uow.repo.account(user_id)
             account.balance += transfer.amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, transfer.amount, "transfer_in", self.clock(), transfer.id)
+            uow.repo.save_account(account)
+            uow.repo.add_ledger(user_id, transfer.amount, "transfer_in", now, transfer.id)
         self.bus.publish("accepted", transfer)
 
-    def decline(self, user_id, transfer_id):
-        self._refund(self._pending_to(user_id, transfer_id), DECLINED)
+    def decline(self, user_id, transfer_id) -> None:
+        with self.uow() as uow:
+            transfer = self._refund(uow, self._pending_to(uow, user_id, transfer_id), Status.DECLINED)
+        self.bus.publish("declined", transfer)
 
-    def cancel_last(self, sender_id):
-        transfer = self.repo.last_pending_of(sender_id)
-        if transfer is None:
-            raise NothingToCancel()
-        self._refund(transfer, CANCELLED)
+    def cancel_last(self, sender_id) -> Transfer:
+        with self.uow() as uow:
+            transfer = uow.repo.last_pending_of(sender_id)
+            if transfer is None:
+                raise NothingToCancel()
+            transfer = self._refund(uow, transfer, Status.CANCELLED)
+        self.bus.publish("cancelled", transfer)
         return transfer
 
     def expire_pending(self) -> int:
         """The nightly job: refund every transfer that was not accepted in time."""
-        expired = self.repo.pending_created_before(self.clock() - EXPIRY)
+        now = self.clock()
+        with self.uow() as uow:
+            expired = [self._refund(uow, t, Status.EXPIRED) for t in uow.repo.pending() if t.is_expired(now)]
         for transfer in expired:
-            self._refund(transfer, EXPIRED)
+            self.bus.publish("expired", transfer)
         return len(expired)
 
-    def adjust(self, user_id, amount: Money, reason):
+    def adjust(self, phone: PhoneNumber, amount: Money, reason) -> None:
         """A manual correction by the support team: a ledger entry like any other."""
-        with self.conn:
-            account = self.repo.account(user_id)
+        with self.uow() as uow:
+            user = uow.users.by_phone(phone)
+            if user is None:
+                raise UnknownRecipient(phone)
+            account = uow.repo.account(user.id)
             account.balance += amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(user_id, amount, "adjustment", self.clock(), note=reason)
+            uow.repo.save_account(account)
+            uow.repo.add_ledger(user.id, amount, "adjustment", self.clock(), note=reason)
 
     def statement(self, user_id) -> dict:
-        received = self.repo.transfers_to(user_id)
-        sent = self.repo.transfers_from(user_id)
-        lines = []
-        for transfer in self.repo.transfers_of(user_id):
-            other = self.users.get(transfer.other_party(user_id))
-            direction = "from" if transfer.recipient_id == user_id else "to"
-            lines.append(f"#{transfer.id} {transfer.status:<9} {str(transfer.amount):>10}"
-                         f"  {direction} {other.name} ({other.phone.masked()})")
+        with self.uow() as uow:
+            received = uow.repo.transfers_to(user_id)
+            sent = uow.repo.transfers_from(user_id)
+            lines = []
+            for transfer in uow.repo.transfers_of(user_id):
+                other = uow.users.get(transfer.other_party(user_id))
+                direction = "from" if transfer.recipient_id == user_id else "to"
+                lines.append(f"#{transfer.id} {transfer.status:<9} {str(transfer.amount):>10}"
+                             f"  {direction} {other.name} ({other.phone.masked()})")
         return {
             "received_count": len(received),
             "received_total": sum((t.amount for t in received), ZERO),
@@ -108,17 +128,19 @@ class WalletService:
             "lines": lines,
         }
 
-    def _pending_to(self, user_id, transfer_id):
-        transfer = self.repo.transfer(transfer_id)
-        if transfer is None or transfer.recipient_id != user_id or transfer.status != PENDING:
+    @staticmethod
+    def _pending_to(uow, user_id, transfer_id) -> Transfer:
+        transfer = uow.repo.transfer(transfer_id)
+        if transfer is None or transfer.recipient_id != user_id or transfer.status != Status.PENDING:
             raise TransferNotFound(transfer_id)
         return transfer
 
-    def _refund(self, transfer, status):
-        with self.conn:
-            self.repo.set_status(transfer.id, status, self.clock())
-            account = self.repo.account(transfer.sender_id)
-            account.balance += transfer.amount
-            self.repo.save_account(account)
-            self.repo.add_ledger(transfer.sender_id, transfer.amount, "refund", self.clock(), transfer.id)
-        self.bus.publish(status.lower(), transfer)
+    def _refund(self, uow, transfer, status) -> Transfer:
+        now = self.clock()
+        transfer = transfer.moved_to(status, now)
+        uow.repo.save_status(transfer)
+        account = uow.repo.account(transfer.sender_id)
+        account.balance += transfer.amount
+        uow.repo.save_account(account)
+        uow.repo.add_ledger(transfer.sender_id, transfer.amount, "refund", now, transfer.id)
+        return transfer

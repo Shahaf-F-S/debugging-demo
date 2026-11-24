@@ -1,8 +1,12 @@
-"""All SQL of PeerPay lives here (DESIGN.md §8). Money columns hold agorot."""
+"""All SQL of PeerPay lives here (DESIGN.md §8). Money columns hold agorot.
+
+A UnitOfWork is one transaction: every use case opens one, and it commits when the use case
+succeeds, or rolls back when it raises. The repositories never commit by themselves.
+"""
 import sqlite3
 from datetime import datetime
 
-from .models import Account, Transfer, User
+from .models import Account, Status, Transfer, User
 from .money import Money
 from .values import BankAccount, PhoneNumber
 
@@ -41,11 +45,34 @@ CREATE TABLE IF NOT EXISTS ledger (
 """
 
 
-def connect(db_path) -> sqlite3.Connection:
+def create_schema(db_path) -> None:
     conn = sqlite3.connect(db_path, timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    return conn
+    try:
+        conn.executescript(SCHEMA)
+    finally:
+        conn.close()
+
+
+class UnitOfWork:
+    """``with UnitOfWork(path) as uow:`` — one transaction, with the repositories that work inside it."""
+
+    def __init__(self, db_path):
+        self._db_path = db_path
+
+    def __enter__(self) -> "UnitOfWork":
+        self.conn = sqlite3.connect(self._db_path, timeout=5, isolation_level=None)   # we BEGIN/COMMIT ourselves
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("BEGIN IMMEDIATE")
+        self.users = UserDirectory(self.conn)
+        self.repo = Repository(self.conn)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            self.conn.execute("COMMIT" if exc_type is None else "ROLLBACK")
+        finally:
+            self.conn.close()
+        return False
 
 
 def _iso(moment: datetime) -> str:
@@ -57,17 +84,17 @@ def _time(text):
 
 
 def _user(row) -> User:
-    return User(row["id"], PhoneNumber(row["phone"]), row["name"], BankAccount(row["bank_account"]), row["password_hash"],
-                _time(row["last_login"]))
+    return User(row["id"], PhoneNumber(row["phone"]), row["name"], BankAccount(row["bank_account"]),
+                row["password_hash"], _time(row["last_login"]))
 
 
 def _transfer(row) -> Transfer:
     return Transfer(row["id"], row["sender_id"], row["recipient_id"], Money(row["agorot"]), row["note"],
-                    row["status"], _time(row["created_at"]), _time(row["settled_at"]))
+                    Status(row["status"]), _time(row["created_at"]), _time(row["settled_at"]))
 
 
 class UserDirectory:
-    """Users rarely change, so every user that was loaded once is kept in memory."""
+    """Users rarely change, so every user that was loaded once is kept in memory (for this unit of work)."""
 
     def __init__(self, conn):
         self.conn = conn
@@ -115,7 +142,8 @@ class Repository:
         return Account(row["user_id"], Money(row["balance"]))
 
     def save_account(self, account: Account) -> None:
-        self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?", (account.balance.agorot, account.user_id))
+        self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?",
+                          (account.balance.agorot, account.user_id))
 
     # --- ledger ---------------------------------------------------------------------------
 
@@ -130,8 +158,8 @@ class Repository:
     def insert_transfer(self, sender_id, recipient_id, amount: Money, note, created_at) -> Transfer:
         cur = self.conn.execute(
             "INSERT INTO transfers (sender_id, recipient_id, agorot, note, status, created_at)"
-            " VALUES (?, ?, ?, ?, 'PENDING', ?)",
-            (sender_id, recipient_id, amount.agorot, note, _iso(created_at)),
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (sender_id, recipient_id, amount.agorot, note, Status.PENDING, _iso(created_at)),
         )
         return self.transfer(cur.lastrowid)
 
@@ -139,37 +167,36 @@ class Repository:
         row = self.conn.execute("SELECT * FROM transfers WHERE id = ?", (transfer_id,)).fetchone()
         return _transfer(row) if row else None
 
-    def set_status(self, transfer_id, status, settled_at) -> None:
+    def save_status(self, transfer: Transfer) -> None:
         self.conn.execute("UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
-                          (status, _iso(settled_at), transfer_id))
+                          (transfer.status, _iso(transfer.settled_at), transfer.id))
+
+    def pending(self) -> list[Transfer]:
+        rows = self.conn.execute("SELECT * FROM transfers WHERE status = ? ORDER BY id", (Status.PENDING,))
+        return [_transfer(row) for row in rows]
 
     def pending_to(self, user_id) -> list[Transfer]:
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'PENDING' ORDER BY id", (user_id,))
-        return [_transfer(row) for row in rows]
-
-    def pending_created_before(self, cutoff: datetime) -> list[Transfer]:
-        rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE status = 'PENDING' AND created_at <= ? ORDER BY id", (_iso(cutoff),))
+            "SELECT * FROM transfers WHERE recipient_id = ? AND status = ? ORDER BY id", (user_id, Status.PENDING))
         return [_transfer(row) for row in rows]
 
     def last_pending_of(self, sender_id) -> Transfer | None:
         row = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING' ORDER BY id DESC LIMIT 1",
-            (sender_id,),
+            "SELECT * FROM transfers WHERE sender_id = ? AND status = ? ORDER BY id DESC LIMIT 1",
+            (sender_id, Status.PENDING),
         ).fetchone()
         return _transfer(row) if row else None
 
     def transfers_to(self, user_id) -> list[Transfer]:
         """Accepted transfers that the user received."""
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'ACCEPTED' ORDER BY id", (user_id,))
+            "SELECT * FROM transfers WHERE recipient_id = ? AND status = ? ORDER BY id", (user_id, Status.ACCEPTED))
         return [_transfer(row) for row in rows]
 
     def transfers_from(self, user_id) -> list[Transfer]:
         """Accepted transfers that the user sent."""
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'ACCEPTED' ORDER BY id", (user_id,))
+            "SELECT * FROM transfers WHERE sender_id = ? AND status = ? ORDER BY id", (user_id, Status.ACCEPTED))
         return [_transfer(row) for row in rows]
 
     def transfers_of(self, user_id) -> list[Transfer]:

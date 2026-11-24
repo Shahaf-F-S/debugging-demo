@@ -68,3 +68,10 @@ class NothingToCancel(WalletError):
 
 class TopUpFailed(WalletError):
     code = "top_up_failed"
+
+
+class InvalidTransition(WalletError):
+    code = "invalid_transition"
+
+    def __init__(self, current, wanted):
+        super().__init__(f"a {current} transfer cannot become {wanted}")

@@ -1,6 +1,8 @@
 """Support team tool: credit a user's wallet (a compensation, or a correction).
 
     python -m tools.support 0521234567 30.00 "compensation for ticket #812"
+
+It goes through the service like any other request (DESIGN.md §3, §8): one ledger entry, one transaction.
 """
 import sys
 from pathlib import Path
@@ -12,13 +14,7 @@ from peerpay.values import PhoneNumber
 
 def credit(db_path, phone, amount_text, reason):
     api = PeerPayAPI(db_path)
-    try:
-        user = api.wallet.users.by_phone(PhoneNumber.parse(phone))
-        if user is None:
-            raise SystemExit(f"no user with phone number {phone}")
-        api.wallet.adjust(user.id, Money.parse(amount_text), reason)
-    finally:
-        api.close()
+    api.wallet.adjust(PhoneNumber.parse(phone), Money.parse(amount_text), reason)
     print(f"credited {amount_text} to {phone} ({reason})")
 
 

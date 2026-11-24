@@ -1,34 +1,53 @@
-"""The PeerPay API: one method per request. Every method returns a JSON-ready dict."""
+"""The PeerPay API: one method per request. Every method returns a JSON-ready dict.
+
+Input text becomes value objects here, at the edge. Errors become responses in exactly one place:
+the @endpoint decorator (DESIGN.md §6).
+"""
+import functools
+import logging
 import secrets
 
 from . import auth
 from .bank import BankAdapter
 from .bank_gateway import MockBank
 from .clock import SystemClock
+from .commands import SendTransfer, TopUp
 from .errors import NotLoggedIn, WalletError
 from .events import EventBus, Notifier, wire_notifications
 from .money import Money
-from .repository import connect
-from .service import EXPIRY, WalletService
+from .repository import create_schema
+from .service import WalletService
 from .validation import parse_send, positive
 
+log = logging.getLogger(__name__)
 
-def _error(e: WalletError) -> dict:
-    return {"ok": False, "error": e.code, "message": str(e)}
+
+def endpoint(method):
+    """The error boundary: a method returns its payload, or raises; the response is built here."""
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        try:
+            return {"ok": True, **method(*args, **kwargs)}
+        except WalletError as e:
+            return {"ok": False, "error": e.code, "message": str(e)}
+        except Exception:
+            log.exception("unexpected error in %s", method.__name__)
+            return {"ok": False, "error": "internal_error", "message": "something went wrong; it was logged"}
+    return wrapper
 
 
 class PeerPayAPI:
     def __init__(self, db_path, bank=None, clock=None):
-        self.conn = connect(db_path)
+        create_schema(db_path)
         self.clock = clock or SystemClock()
         self.notifier = Notifier()
         bus = EventBus()
         wire_notifications(bus, self.notifier)
-        self.wallet = WalletService(self.conn, BankAdapter(bank or MockBank(db_path)), self.clock, bus)
+        self.wallet = WalletService(db_path, BankAdapter(bank or MockBank(db_path)), self.clock, bus)
         self._sessions = {}                     # token -> user id
 
     def close(self):
-        self.conn.close()
+        """Nothing to release: every unit of work closes its own connection."""
 
     def _user_id(self, token) -> int:
         if token not in self._sessions:
@@ -37,91 +56,67 @@ class PeerPayAPI:
 
     # --- users ----------------------------------------------------------------------------
 
+    @endpoint
     def register(self, phone, name, bank_account, password):
-        try:
-            user_id = auth.register(self.wallet, phone, name, bank_account, password)
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "user_id": user_id}
+        return {"user_id": auth.register(self.wallet, phone, name, bank_account, password)}
 
+    @endpoint
     def login(self, phone, password):
-        try:
-            user_id = auth.login(self.wallet, phone, password)
-        except WalletError as e:
-            return _error(e)
+        user_id = auth.login(self.wallet, phone, password)
         token = secrets.token_urlsafe(16)
         self._sessions[token] = user_id
-        return {"ok": True, "token": token}
+        return {"token": token}
 
     # --- wallet ---------------------------------------------------------------------------
 
+    @endpoint
     def balance(self, token):
-        try:
-            balance = self.wallet.balance(self._user_id(token))
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "balance": str(balance), "agorot": balance.agorot}
+        balance = self.wallet.balance(self._user_id(token))
+        return {"balance": str(balance), "agorot": balance.agorot}
 
+    @endpoint
     def top_up(self, token, amount_text):
-        try:
-            self.wallet.top_up(self._user_id(token), positive(Money.parse(amount_text)))
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True}
+        self.wallet.top_up(TopUp(self._user_id(token), positive(Money.parse(amount_text))))
+        return {}
 
+    @endpoint
     def send(self, token, phone, amount_text, note=""):
-        try:
-            user_id = self._user_id(token)
-            request = parse_send(phone, amount_text, note)
-            transfer = self.wallet.send(user_id, request["recipient"], request["amount"], request["note"])
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "transfer_id": transfer.id, "message": "Sent ✓"}
+        user_id = self._user_id(token)
+        request = parse_send(phone, amount_text, note)
+        transfer = self.wallet.send(SendTransfer(user_id, request["recipient"], request["amount"], request["note"]))
+        return {"transfer_id": transfer.id, "message": "Sent ✓"}
 
+    @endpoint
     def pending(self, token):
-        try:
-            transfers = self.wallet.pending(self._user_id(token))
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "pending": [
+        return {"pending": [
             {
                 "id": t.id,
-                "from": self.wallet.users.get(t.sender_id).name,
+                "from": sender_name,
                 "amount": str(t.amount),
                 "note": t.note,
-                "expires_at": (t.created_at + EXPIRY).isoformat(),
+                "expires_at": t.expires_at.isoformat(),
             }
-            for t in transfers
+            for t, sender_name in self.wallet.pending(self._user_id(token))
         ]}
 
+    @endpoint
     def accept(self, token, transfer_id):
-        try:
-            self.wallet.accept(self._user_id(token), transfer_id)
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True}
+        self.wallet.accept(self._user_id(token), transfer_id)
+        return {}
 
+    @endpoint
     def decline(self, token, transfer_id):
-        try:
-            self.wallet.decline(self._user_id(token), transfer_id)
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True}
+        self.wallet.decline(self._user_id(token), transfer_id)
+        return {}
 
+    @endpoint
     def cancel_last(self, token):
-        try:
-            transfer = self.wallet.cancel_last(self._user_id(token))
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "transfer_id": transfer.id}
+        return {"transfer_id": self.wallet.cancel_last(self._user_id(token)).id}
 
+    @endpoint
     def statement(self, token):
-        try:
-            s = self.wallet.statement(self._user_id(token))
-        except WalletError as e:
-            return _error(e)
+        s = self.wallet.statement(self._user_id(token))
         return {
-            "ok": True,
             "received_count": s["received_count"],
             "received_total": str(s["received_total"]),
             "sent_count": s["sent_count"],
@@ -129,15 +124,13 @@ class PeerPayAPI:
             "lines": s["lines"],
         }
 
+    @endpoint
     def notifications(self, token):
-        try:
-            user_id = self._user_id(token)
-        except WalletError as e:
-            return _error(e)
-        return {"ok": True, "messages": self.notifier.messages_for(user_id)}
+        return {"messages": self.notifier.messages_for(self._user_id(token))}
 
     # --- jobs -----------------------------------------------------------------------------
 
+    @endpoint
     def run_expiry(self):
         """The nightly job (DESIGN.md §5). Called by the scheduler, not by users."""
-        return {"ok": True, "expired": self.wallet.expire_pending()}
+        return {"expired": self.wallet.expire_pending()}
