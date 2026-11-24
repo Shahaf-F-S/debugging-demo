@@ -102,9 +102,10 @@ class WalletService:
         lines = []
         for transfer in self.repo.transfers_of(user_id):
             other = self.users.get(transfer.other_party(user_id))
+            other.phone = mask_phone(other.phone)
             direction = "from" if transfer.recipient_id == user_id else "to"
             lines.append(f"#{transfer.id} {transfer.status:<9} {format_amount(transfer.amount):>10}"
-                         f"  {direction} {other.name} ({mask_phone(other.phone)})")
+                         f"  {direction} {other.name} ({other.phone})")
         return {
             "received_count": sum(1 for _ in received),
             "received_total": sum(t.amount for t in received),
