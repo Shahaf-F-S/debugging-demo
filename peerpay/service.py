@@ -109,7 +109,7 @@ class WalletService:
             lines.append(f"#{transfer.id} {transfer.status:<9} {format_amount(transfer.amount):>10}"
                          f"  {direction} {other.name} ({mask_phone(other.phone)})")
         return {
-            "received_count": len(received),
+            "received_count": sum(1 for _ in received),
             "received_total": sum(t.amount for t in received),
             "sent_count": len(sent),
             "sent_total": sum(t.amount for t in sent),

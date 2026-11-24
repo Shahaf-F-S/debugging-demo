@@ -158,11 +158,12 @@ class Repository:
         ).fetchone()
         return _transfer(row) if row else None
 
-    def transfers_to(self, user_id) -> list[Transfer]:
-        """Accepted transfers that the user received."""
+    def transfers_to(self, user_id):
+        """Accepted transfers that the user received. Streams the rows instead of loading them all."""
         rows = self.conn.execute(
             "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'ACCEPTED' ORDER BY id", (user_id,))
-        return [_transfer(row) for row in rows]
+        for row in rows:
+            yield _transfer(row)
 
     def transfers_from(self, user_id) -> list[Transfer]:
         """Accepted transfers that the user sent."""
