@@ -1,8 +1,6 @@
 """A tiny publish/subscribe bus, and the notifier that turns events into push messages (DESIGN.md §11)."""
 import functools
 
-from .money import format_amount
-
 TEMPLATES = {
     "sent": "You received {amount} (transfer #{id}). Accept it within 30 days.",
     "accepted": "Your transfer #{id} of {amount} was accepted.",
@@ -33,7 +31,7 @@ class Notifier:
 
     def push(self, kind, transfer):
         user_id = transfer.recipient_id if kind in NOTIFY_RECIPIENT else transfer.sender_id
-        text = TEMPLATES[kind].format(id=transfer.id, amount=format_amount(transfer.amount))
+        text = TEMPLATES[kind].format(id=transfer.id, amount=transfer.amount)
         self.outbox.append((user_id, text))
 
     def messages_for(self, user_id) -> list[str]:

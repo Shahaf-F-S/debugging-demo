@@ -2,11 +2,12 @@
 import secrets
 
 from . import auth
+from .bank import BankAdapter
 from .bank_gateway import MockBank
 from .clock import SystemClock
 from .errors import NotLoggedIn, WalletError
 from .events import EventBus, Notifier, wire_notifications
-from .money import format_amount, parse_amount
+from .money import Money
 from .repository import connect
 from .service import EXPIRY, WalletService
 from .validation import normalize_phone
@@ -23,7 +24,7 @@ class PeerPayAPI:
         self.notifier = Notifier()
         bus = EventBus()
         wire_notifications(bus, self.notifier)
-        self.wallet = WalletService(self.conn, bank or MockBank(db_path), self.clock, bus)
+        self.wallet = WalletService(self.conn, BankAdapter(bank or MockBank(db_path)), self.clock, bus)
         self._sessions = {}                     # token -> user id
 
     def close(self):
@@ -56,21 +57,21 @@ class PeerPayAPI:
 
     def balance(self, token):
         try:
-            agorot = self.wallet.balance(self._user_id(token))
+            balance = self.wallet.balance(self._user_id(token))
         except WalletError as e:
             return _error(e)
-        return {"ok": True, "balance": format_amount(agorot), "agorot": agorot}
+        return {"ok": True, "balance": str(balance), "agorot": balance.agorot}
 
     def top_up(self, token, amount_text):
         try:
-            self.wallet.top_up(self._user_id(token), parse_amount(amount_text))
+            self.wallet.top_up(self._user_id(token), Money.parse(amount_text))
         except WalletError as e:
             return _error(e)
         return {"ok": True}
 
     def send(self, token, phone, amount_text, note=""):
         try:
-            transfer = self.wallet.send(self._user_id(token), normalize_phone(phone), parse_amount(amount_text), note)
+            transfer = self.wallet.send(self._user_id(token), normalize_phone(phone), Money.parse(amount_text), note)
         except WalletError as e:
             return _error(e)
         return {"ok": True, "transfer_id": transfer.id, "message": "Sent ✓"}
@@ -84,7 +85,7 @@ class PeerPayAPI:
             {
                 "id": t.id,
                 "from": self.wallet.users.get(t.sender_id).name,
-                "amount": format_amount(t.amount),
+                "amount": str(t.amount),
                 "note": t.note,
                 "expires_at": (t.created_at + EXPIRY).isoformat(),
             }
@@ -120,9 +121,9 @@ class PeerPayAPI:
         return {
             "ok": True,
             "received_count": s["received_count"],
-            "received_total": format_amount(s["received_total"]),
+            "received_total": str(s["received_total"]),
             "sent_count": s["sent_count"],
-            "sent_total": format_amount(s["sent_total"]),
+            "sent_total": str(s["sent_total"]),
             "lines": s["lines"],
         }
 

@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 
 from .models import Account, Transfer, User
+from .money import Money
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -60,7 +61,7 @@ def _user(row) -> User:
 
 
 def _transfer(row) -> Transfer:
-    return Transfer(row["id"], row["sender_id"], row["recipient_id"], row["agorot"], row["note"],
+    return Transfer(row["id"], row["sender_id"], row["recipient_id"], Money(row["agorot"]), row["note"],
                     row["status"], _time(row["created_at"]), _time(row["settled_at"]))
 
 
@@ -110,26 +111,26 @@ class Repository:
 
     def account(self, user_id) -> Account:
         row = self.conn.execute("SELECT user_id, balance FROM accounts WHERE user_id = ?", (user_id,)).fetchone()
-        return Account(row["user_id"], row["balance"])
+        return Account(row["user_id"], Money(row["balance"]))
 
     def save_account(self, account: Account) -> None:
-        self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?", (account.balance, account.user_id))
+        self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?", (account.balance.agorot, account.user_id))
 
     # --- ledger ---------------------------------------------------------------------------
 
-    def add_ledger(self, user_id, agorot, kind, created_at, transfer_id=None, note="") -> None:
+    def add_ledger(self, user_id, amount: Money, kind, created_at, transfer_id=None, note="") -> None:
         self.conn.execute(
             "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, agorot, kind, transfer_id, note, _iso(created_at)),
+            (user_id, amount.agorot, kind, transfer_id, note, _iso(created_at)),
         )
 
     # --- transfers ------------------------------------------------------------------------
 
-    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at) -> Transfer:
+    def insert_transfer(self, sender_id, recipient_id, amount: Money, note, created_at) -> Transfer:
         cur = self.conn.execute(
             "INSERT INTO transfers (sender_id, recipient_id, agorot, note, status, created_at)"
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
-            (sender_id, recipient_id, agorot, note, _iso(created_at)),
+            (sender_id, recipient_id, amount.agorot, note, _iso(created_at)),
         )
         return self.transfer(cur.lastrowid)
 

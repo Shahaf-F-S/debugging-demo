@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from .money import Money
+
 # Transfer statuses (DESIGN.md §5)
 PENDING = "PENDING"
 ACCEPTED = "ACCEPTED"
@@ -23,7 +25,7 @@ class User:
 @dataclass
 class Account:
     user_id: int
-    balance: int                # agorot
+    balance: Money
 
 
 @dataclass
@@ -31,7 +33,7 @@ class Transfer:
     id: int
     sender_id: int
     recipient_id: int
-    amount: int                 # agorot
+    amount: Money
     note: str
     status: str
     created_at: datetime

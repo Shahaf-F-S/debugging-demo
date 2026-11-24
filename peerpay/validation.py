@@ -31,7 +31,7 @@ def validate_registration(phone, name, bank_account, password, bank) -> list[str
 
 def validate_send(amount, recipient_phone, note) -> list[str]:
     errors = []
-    if amount <= 0:
+    if not amount.is_positive():
         errors.append("amount must be positive")
     if not PHONE_RE.fullmatch(recipient_phone):
         errors.append("invalid phone number")

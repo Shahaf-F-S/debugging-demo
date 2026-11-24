@@ -1,12 +1,10 @@
-"""PeerPay use cases (DESIGN.md §3–§5, §9–§12). Amounts are int agorot."""
+"""PeerPay use cases (DESIGN.md §3–§5, §9–§12). Amounts are Money."""
 from datetime import timedelta
-from decimal import Decimal
 
-from .bank_gateway import BankError
-from .errors import (InsufficientFunds, NotAllowed, NothingToCancel, TopUpFailed, TransferExpired,
+from .errors import (InsufficientFunds, NotAllowed, NothingToCancel, TransferExpired,
                      TransferNotFound, UnknownRecipient, ValidationError)
 from .models import ACCEPTED, CANCELLED, DECLINED, EXPIRED, PENDING
-from .money import format_amount
+from .money import ZERO, Money
 from .repository import Repository, UserDirectory
 from .validation import mask_phone, validate_send
 
@@ -22,24 +20,21 @@ class WalletService:
         self.users = UserDirectory(conn)
         self.repo = Repository(conn)
 
-    def balance(self, user_id) -> int:
+    def balance(self, user_id) -> Money:
         return self.repo.account(user_id).balance
 
-    def top_up(self, user_id, amount):
-        if amount <= 0:
+    def top_up(self, user_id, amount: Money):
+        if not amount.is_positive():
             raise ValidationError(["amount must be positive"])
         user = self.users.get(user_id)
-        try:
-            self.bank.pull(user.bank_account, Decimal(amount) / 100)
-        except BankError as e:
-            raise TopUpFailed(str(e)) from e
+        amount = self.bank.pull(user.bank_account, amount)
         with self.conn:
             account = self.repo.account(user_id)
             account.balance += amount
             self.repo.save_account(account)
             self.repo.add_ledger(user_id, amount, "deposit", self.clock())
 
-    def send(self, sender_id, phone, amount, note=""):
+    def send(self, sender_id, phone, amount: Money, note=""):
         errors = validate_send(amount, phone, note)
         if errors:
             raise ValidationError(errors)
@@ -91,7 +86,7 @@ class WalletService:
             self._refund(transfer, EXPIRED)
         return len(expired)
 
-    def adjust(self, user_id, amount, reason):
+    def adjust(self, user_id, amount: Money, reason):
         """A manual correction by the support team: a ledger entry like any other."""
         with self.conn:
             account = self.repo.account(user_id)
@@ -106,13 +101,13 @@ class WalletService:
         for transfer in self.repo.transfers_of(user_id):
             other = self.users.get(transfer.other_party(user_id))
             direction = "from" if transfer.recipient_id == user_id else "to"
-            lines.append(f"#{transfer.id} {transfer.status:<9} {format_amount(transfer.amount):>10}"
+            lines.append(f"#{transfer.id} {transfer.status:<9} {str(transfer.amount):>10}"
                          f"  {direction} {other.name} ({mask_phone(other.phone)})")
         return {
             "received_count": len(received),
-            "received_total": sum(t.amount for t in received),
+            "received_total": sum((t.amount for t in received), ZERO),
             "sent_count": len(sent),
-            "sent_total": sum(t.amount for t in sent),
+            "sent_total": sum((t.amount for t in sent), ZERO),
             "lines": lines,
         }
 
