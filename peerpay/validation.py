@@ -37,9 +37,7 @@ def validate_registration(phone, name, bank_account, password, bank):
     return errors
 
 
-def validate_send(amount, recipient_phone, note):
-    errors = []
-
+def validate_send(amount, recipient_phone, note, errors=[]):
     if amount <= 0:
         errors.append("amount must be positive")
 
