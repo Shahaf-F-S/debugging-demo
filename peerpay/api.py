@@ -1,5 +1,6 @@
 """The PeerPay API: one method per request. Every method returns a JSON-ready dict."""
 import secrets
+from datetime import timedelta
 
 from . import auth
 from .bank_gateway import MockBank
@@ -8,7 +9,7 @@ from .errors import NotLoggedIn, WalletError
 from .events import EventBus, Notifier, wire_notifications
 from .money import format_amount, parse_amount
 from .repository import connect
-from .service import EXPIRY, WalletService
+from .service import WalletService
 from .validation import normalize_phone
 
 
@@ -88,7 +89,7 @@ class PeerPayAPI:
                 "from": self.wallet.users.get(t.sender_id).name,
                 "amount": format_amount(t.amount),
                 "note": t.note,
-                "expires_at": (t.created_at + EXPIRY).isoformat(),
+                "expires_at": (t.created_at + timedelta(days=31)).isoformat(),     # a month
             }
             for t in transfers
         ]}
