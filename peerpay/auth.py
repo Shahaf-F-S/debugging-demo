@@ -1,24 +1,23 @@
 """Registration, login and password hashing (DESIGN.md §2)."""
 import hashlib
-import hmac
 import os
 
 from .errors import LoginFailed, ValidationError
 from .validation import normalize_phone, validate_registration
 
 ITERATIONS = 600_000
+SALT = os.urandom(16)
 
 
 def hash_password(password: str) -> str:
-    salt = os.urandom(16)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, ITERATIONS)
-    return f"pbkdf2_sha256${ITERATIONS}${salt.hex()}${digest.hex()}"
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), SALT, ITERATIONS)
+    return f"pbkdf2_sha256${ITERATIONS}${digest.hex()}"
 
 
 def verify_password(password: str, stored: str) -> bool:
-    _, iterations, salt_hex, digest_hex = stored.split("$")
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(iterations))
-    return hmac.compare_digest(digest, bytes.fromhex(digest_hex))
+    _, iterations, digest_hex = stored.split("$")
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), SALT, int(iterations))
+    return digest.hex() == digest_hex
 
 
 def register(wallet, phone, name, bank_account, password) -> int:
