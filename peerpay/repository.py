@@ -1,4 +1,5 @@
 """All SQL of PeerPay lives here (DESIGN.md §8). Money columns hold agorot."""
+
 import sqlite3
 from datetime import datetime
 
@@ -39,14 +40,15 @@ CREATE TABLE IF NOT EXISTS ledger (
 """
 
 
-def connect(db_path) -> sqlite3.Connection:
+def connect(db_path):
     conn = sqlite3.connect(db_path, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+
     return conn
 
 
-def _iso(moment: datetime) -> str:
+def _iso(moment):
     return moment.isoformat(timespec="microseconds")
 
 
@@ -54,14 +56,28 @@ def _time(text):
     return datetime.fromisoformat(text) if text else None
 
 
-def _user(row) -> User:
-    return User(row["id"], row["phone"], row["name"], row["bank_account"], row["password_hash"],
-                _time(row["last_login"]))
+def _user(row):
+    return User(
+        id=row["id"],
+        phone=row["phone"],
+        name=row["name"],
+        bank_account=row["bank_account"],
+        password_hash=row["password_hash"],
+        last_login=_time(row["last_login"])
+    )
 
 
-def _transfer(row) -> Transfer:
-    return Transfer(row["id"], row["sender_id"], row["recipient_id"], row["agorot"], row["note"],
-                    row["status"], _time(row["created_at"]), _time(row["settled_at"]))
+def _transfer(row):
+    return Transfer(
+        id=row["id"],
+        sender_id=row["sender_id"],
+        recipient_id=row["recipient_id"],
+        amount=row["agorot"],
+        note=row["note"],
+        status=row["status"],
+        created_at=_time(row["created_at"]),
+        settled_at=_time(row["settled_at"])
+    )
 
 
 class UserDirectory:
@@ -71,33 +87,42 @@ class UserDirectory:
         self.conn = conn
         self._cache = {}
 
-    def add(self, phone, name, bank_account, password_hash) -> User:
+    def add(self, phone, name, bank_account, password_hash):
         cur = self.conn.execute(
             "INSERT INTO users (phone, name, bank_account, password_hash) VALUES (?, ?, ?, ?)",
-            (phone, name, bank_account, password_hash),
+            (phone, name, bank_account, password_hash)
         )
-        self.conn.execute("INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,))
+        self.conn.execute(
+            "INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (cur.lastrowid,)
+        )
         self.conn.commit()
+
         return self.get(cur.lastrowid)
 
-    def get(self, user_id) -> User | None:
+    def get(self, user_id):
         if user_id not in self._cache:
             row = self.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
             if row is None:
                 return None
+
             self._cache[user_id] = _user(row)
+
         return self._cache[user_id]
 
-    def by_phone(self, phone) -> User | None:
+    def by_phone(self, phone):
         row = self.conn.execute("SELECT id FROM users WHERE phone = ?", (phone,)).fetchone()
+
         return self.get(row["id"]) if row else None
 
-    def save(self, user: User) -> None:
+    def save(self, user):
         self.conn.execute(
-            "UPDATE users SET phone = ?, name = ?, bank_account = ?, password_hash = ?, last_login = ?"
-            " WHERE id = ?",
-            (user.phone, user.name, user.bank_account, user.password_hash,
-             _iso(user.last_login) if user.last_login else None, user.id),
+            "UPDATE users SET phone = ?, name = ?, bank_account = ?, password_hash = ?,"
+            " last_login = ? WHERE id = ?",
+            (
+                user.phone, user.name, user.bank_account, user.password_hash,
+                _iso(user.last_login) if user.last_login else None, user.id
+            )
         )
         self.conn.commit()
 
@@ -108,77 +133,102 @@ class Repository:
     def __init__(self, conn):
         self.conn = conn
 
-    # --- accounts -------------------------------------------------------------------------
+    def account(self, user_id):
+        row = self.conn.execute(
+            "SELECT user_id, balance FROM accounts WHERE user_id = ?", (user_id,)
+        ).fetchone()
 
-    def account(self, user_id) -> Account:
-        row = self.conn.execute("SELECT user_id, balance FROM accounts WHERE user_id = ?", (user_id,)).fetchone()
         return Account(row["user_id"], row["balance"])
 
-    def save_account(self, account: Account) -> None:
-        self.conn.execute("UPDATE accounts SET balance = ? WHERE user_id = ?", (account.balance, account.user_id))
-        self.conn.commit()
-
-    # --- ledger ---------------------------------------------------------------------------
-
-    def add_ledger(self, user_id, agorot, kind, created_at, transfer_id=None, note="") -> None:
+    def save_account(self, account):
         self.conn.execute(
-            "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, agorot, kind, transfer_id, note, _iso(created_at)),
+            "UPDATE accounts SET balance = ? WHERE user_id = ?",
+            (account.balance, account.user_id)
         )
         self.conn.commit()
 
-    # --- transfers ------------------------------------------------------------------------
+    def add_ledger(self, user_id, agorot, kind, created_at, transfer_id=None, note=""):
+        self.conn.execute(
+            "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, agorot, kind, transfer_id, note, _iso(created_at))
+        )
+        self.conn.commit()
 
-    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at=datetime.now()) -> Transfer:
+    def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at=datetime.now()):
         cur = self.conn.execute(
             "INSERT INTO transfers (sender_id, recipient_id, agorot, note, status, created_at)"
             " VALUES (?, ?, ?, ?, 'PENDING', ?)",
-            (sender_id, recipient_id, agorot, note, _iso(created_at)),
+            (sender_id, recipient_id, agorot, note, _iso(created_at))
         )
         self.conn.commit()
+
         return self.transfer(cur.lastrowid)
 
-    def transfer(self, transfer_id) -> Transfer | None:
+    def transfer(self, transfer_id):
         row = self.conn.execute("SELECT * FROM transfers WHERE id = ?", (transfer_id,)).fetchone()
+
         return _transfer(row) if row else None
 
-    def set_status(self, transfer_id, status, settled_at) -> None:
-        self.conn.execute("UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
-                          (status, _iso(settled_at), transfer_id))
+    def set_status(self, transfer_id, status, settled_at):
+        self.conn.execute(
+            "UPDATE transfers SET status = ?, settled_at = ? WHERE id = ?",
+            (status, _iso(settled_at), transfer_id)
+        )
         self.conn.commit()
 
-    def pending_to(self, user_id) -> list[Transfer]:
+    def pending_to(self, user_id):
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'PENDING' ORDER BY id", (user_id,))
+            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'PENDING' ORDER BY id",
+            (user_id,)
+        )
+
         return [_transfer(row) for row in rows]
 
-    def pending_created_before(self, cutoff: datetime) -> list[Transfer]:
+    def pending_created_before(self, cutoff):
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE status = 'PENDING' AND created_at <= ? ORDER BY id", (_iso(cutoff),))
+            "SELECT * FROM transfers WHERE status = 'PENDING' AND created_at <= ? ORDER BY id",
+            (_iso(cutoff),)
+        )
+
         return [_transfer(row) for row in rows]
 
-    def last_pending_of(self, sender_id) -> Transfer | None:
+    def last_pending_of(self, sender_id):
         row = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1",
-            (sender_id,),
+            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'PENDING'"
+            " ORDER BY created_at DESC LIMIT 1",
+            (sender_id,)
         ).fetchone()
+
         return _transfer(row) if row else None
 
     def transfers_to(self, user_id):
-        """Accepted transfers that the user received. Streams the rows instead of loading them all."""
+        """Accepted transfers that the user received, streamed instead of loaded all at once."""
+
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'ACCEPTED' ORDER BY id", (user_id,))
+            "SELECT * FROM transfers WHERE recipient_id = ? AND status = 'ACCEPTED' ORDER BY id",
+            (user_id,)
+        )
+
         for row in rows:
             yield _transfer(row)
 
-    def transfers_from(self, user_id) -> list[Transfer]:
+    def transfers_from(self, user_id):
         """Accepted transfers that the user sent."""
+
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'ACCEPTED' ORDER BY id", (user_id,))
+            "SELECT * FROM transfers WHERE sender_id = ? AND status = 'ACCEPTED' ORDER BY id",
+            (user_id,)
+        )
+
         return [_transfer(row) for row in rows]
 
-    def transfers_of(self, user_id) -> list[Transfer]:
+    def transfers_of(self, user_id):
         """Every transfer the user sent or received, in any status."""
+
         rows = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? OR recipient_id = ? ORDER BY id", (user_id, user_id))
+            "SELECT * FROM transfers WHERE sender_id = ? OR recipient_id = ? ORDER BY id",
+            (user_id, user_id)
+        )
+
         return [_transfer(row) for row in rows]

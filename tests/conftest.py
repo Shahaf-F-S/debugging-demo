@@ -14,6 +14,7 @@ NOA = ("0509876543", "Noa", "31-102-555017", "noa-test-pass")
 @pytest.fixture(autouse=True)
 def fast_hashing(monkeypatch):
     """The real PBKDF2 settings are slow on purpose; tests use fewer iterations."""
+
     monkeypatch.setattr(auth, "ITERATIONS", 1_000)
 
 
@@ -35,15 +36,20 @@ def bank(db_path):
 @pytest.fixture
 def api(db_path, bank, clock):
     app = PeerPayAPI(db_path, bank=bank, clock=clock)
+
     yield app
+
     app.close()
 
 
 @pytest.fixture
 def tokens(api):
-    """Registers Dana, Yossi and Noa, and logs them in. Returns {name: token}."""
+    """Registers Dana, Yossi and Noa (users 1, 2 and 3), and logs them in. Returns {name: token}."""
+
     result = {}
+
     for phone, name, bank_account, password in (DANA, YOSSI, NOA):
         assert api.register(phone, name, bank_account, password)["ok"]
         result[name] = api.login(phone, password)["token"]
+
     return result

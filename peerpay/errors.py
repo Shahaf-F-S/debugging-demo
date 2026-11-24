@@ -1,4 +1,4 @@
-"""Everything that can go wrong in PeerPay. The API turns these into error responses (DESIGN.md §6)."""
+"""Everything that can go wrong in PeerPay; the API turns these into error responses (§6)."""
 
 
 class WalletError(Exception):
