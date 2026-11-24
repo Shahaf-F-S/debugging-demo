@@ -1,6 +1,6 @@
 # Debugging & Refactoring Lab: "PeerPay" (teacher's guide)
 
-**Teacher only. Do not hand this file out; it is the answer key.**
+**This is the answer key.** It is in the same public repository as the lab, so students can open it.
 
 A single-lesson lab (90 minutes, with a 45-minute variant). It is built on the backend of a small app for
 sending money between friends. Students get code that *mostly works*, a design document (`DESIGN.md`) that
@@ -19,31 +19,34 @@ Everything below was run on Python 3.15.2 on this machine.
 
 ## 0. What is in this repository
 
-| Ref | What it is |
-|---|---|
-| `main` | Untouched (the initial commit). |
-| tag `naive` | A **correct** PeerPay in a plain style (no patterns), with full tests, including `tests/test_regressions.py`: one test per bug. |
-| `teacher/answer-key` | `naive` → **one commit per bug** (`bug(C1): …` … `bug(H1): …`, each message explains the bug) → the regression tests removed → tickets and README → this guide. Run `git show <commit>` on any bug commit to see the bug, and `git revert <commit>` to turn it off. |
-| `student/handout` | **What you give the students.** An orphan branch: no teacher history, no regression tests, no guide. The final tree is identical to the code on `teacher/answer-key`. It has five commits; one of them is C4's "refactor", so `git bisect` has something to find. |
-| `teacher/refactored` | `naive` → one commit per pattern card (`refactor(P1)` … `refactor(P4)`): the reference answer for the refactoring round. All tests, including the regression tests, pass. |
+Everything is on `main`, and it is public: the lab, the answer key and the solution.
 
-To hand it out, for example: `git push <students-remote> student/handout:main`, or
-`git clone --branch student/handout --single-branch <this repo> peerpay-lab`.
+| Where | What it is |
+|---|---|
+| repository root | **The lab the students work on**: the buggy code, `DESIGN.md`, `TICKETS.md`, the weak tests, and the given tools. |
+| `docs/debugging-lab.md` | This guide (the answer key). |
+| `solution/` | The **refactored reference**: patterns P1–P4 applied, all bugs fixed, with every test including `tests/test_regressions.py`. Self-contained: run `python -m pytest` inside `solution/`. |
+| tag `naive` | A **correct** PeerPay in a plain style (no patterns), with full tests, including `tests/test_regressions.py`: one test per bug. |
+| `main`'s history | `naive` → **one commit per bug** (`bug(C1): …` … `bug(H1): …`, each message explains the bug) → the regression tests removed → tickets and README → this guide → two merges. Run `git show <commit>` on any bug commit to see the bug, and `git revert <commit>` to turn it off. |
+| merged-in histories | The `solution/` merge brings in the pattern commits (`refactor(P1)` … `refactor(P4)`); `git show` on each one is that card's solution diff. The second merge keeps the original five-commit student history ("PeerPay: first working version" … "docs: tickets for the debugging lab"), whose final code is the repository root. |
+
+Find any of these commits with `git log --all --oneline`, or by message, e.g. `git show ":/refactor(P3)"`.
 
 **What was verified**
 
-- On `naive` and on `teacher/refactored`, every regression test passes, and so does the weak suite.
-- On `student/handout`, every regression test fails, and the 25 weak tests pass.
+- On `naive` and in `solution/`, every regression test passes, and so does the weak suite.
+- On the root (the student code), every regression test fails, and the 25 weak tests pass.
 - The bugs are **independent**. Applying any one bug's minimal fix (section 2) to the student code turns
   exactly that bug's regression tests green and changes nothing else. Each test was run in its own process,
   because C1 leaks state across tests.
-- On `student/handout`, every one of the five commits passes the weak suite. `git bisect run` with a C4
-  test finds "refactor: compute the expiry date in the API layer".
+- Every commit of the five-commit student history passes the weak suite.
+- `git bisect run` with a C4 test finds C4 two ways:
+  - Along `main` (`git bisect start --first-parent HEAD naive`), it finds `bug(C4): …`.
+  - Along the student history, it finds "refactor: compute the expiry date in the API layer".
 
-**To run the regression tests against the student code** (they live only on `naive`):
+**To run the regression tests against the student code** (they live in `solution/tests/` and on `naive`):
 
 ```powershell
-git checkout student/handout
 git checkout naive -- tests/test_regressions.py
 python -m pytest tests/test_regressions.py
 git rm -q -f tests/test_regressions.py
@@ -363,7 +366,7 @@ hidden. Pairs who hunt S3's family find it. **Reveal it in the debrief** with `p
 
 ## 3. The patterns (the refactoring round)
 
-Each card is one commit on `teacher/refactored`. That commit is the reference answer, and `git show` on it
+Each card is one `refactor(P…)` commit, merged into `main` as `solution/`. That commit is the reference answer, and `git show` on it
 is the card's solution diff. All the tests, including the regression tests, pass after every commit.
 
 | Card | Commit | What changes | Removes |
@@ -374,7 +377,7 @@ is the card's solution diff. All the tests, including the regression tests, pass
 | **P4 DB usage** | `refactor(P4)` | The ledger as the only source of truth (no balance column: a balance is `SUM(ledger)`); `UserRepo`, `LedgerRepo`, `TransferRepo` return immutable objects in lists and keep no cache; `touch_last_login` updates one column | C2, C6, S4 |
 | **P5 Time** | already in `naive` | The clock is injected and nothing runs at import time; `Clock` is a type in the service | S3, H1 |
 
-The essential snippets (from `teacher/refactored`):
+The essential snippets (from `solution/`):
 
 ```python
 # P1: money.py
@@ -488,9 +491,9 @@ published only after the commit.
 
 ## 6. Maintaining the lab
 
-- **To change a bug:** edit its commit on `teacher/answer-key` (rebase), then rebuild `student/handout` from
-  the final tree (see the commit list on that branch). Afterwards, check that each regression test fails on
-  its own, and that each minimal fix turns only its own test green.
+- **To change a bug:** change it in the root code (or `git revert` its `bug(…)` commit and plant it again),
+  then check that each regression test fails on its own, and that each minimal fix turns only its own test
+  green.
 - **Passwords in tests:** tests use 1,000 PBKDF2 iterations (a `monkeypatch` in `conftest.py`). The code
   default is 600,000.
 - **The DB:** `testing.db` is always a testing DB, and `demo.py` re-creates it unless you pass `--reuse`.

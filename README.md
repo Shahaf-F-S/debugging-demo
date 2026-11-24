@@ -38,3 +38,11 @@ api.balance(dana)
 The test users and their test passwords are in `seed.py`. In tests, use the fixtures from
 `tests/conftest.py`: `api`, `tokens` (Dana, Yossi and Noa, registered and logged in), `clock` (a
 `FakeClock`), and `db_path`.
+
+## What else is in this repository
+
+Spoilers, for after the lab (or for teachers):
+
+- [docs/debugging-lab.md](docs/debugging-lab.md): the teacher's guide, with every bug, its fix and the lesson plan.
+- [solution/](solution/): the refactored reference solution, self-contained (`cd solution`, then `python -m pytest`).
+- The git history: the tag `naive` is a correct version, and each later `bug(…)` commit plants one bug.
