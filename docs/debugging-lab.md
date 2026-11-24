@@ -2,20 +2,25 @@
 
 **This is the answer key.** It is in the same public repository as the lab, so students can open it.
 
-A single-lesson lab (90 minutes, with a 45-minute variant). It is built on the backend of a small app for
-sending money between friends. Students get code that *mostly works*, a design document (`DESIGN.md`) that
-states what it should do, and a stack of tickets (`TICKETS.md`). Every bug comes from a **Python
-programming-method mistake or a design decision**. In the second half, students apply **design patterns**
-that remove whole families of bugs: validation, transaction execution, DB usage, currency in software, and
-**full type hints with a type checker**.
+A single 90-minute lesson, with a 45-minute variant. Students get the backend of a small app for sending money
+between friends: code that *mostly works*, a design document (`DESIGN.md`) that says what it should do, and 8
+tickets (`TICKETS.md`). Every bug comes from a Python programming-method mistake or a design decision. In the
+second half, students apply one of five pattern cards: currency, validation, transactions, DB usage, and type
+hints.
 
 - **Technology:** Python 3.12+ and SQLite only. The "API" is a class of plain methods that return dicts
   (`peerpay.api.PeerPayAPI`), so there is no web framework, GUI, networking or threads.
-- **No type hints in the lab.** The exercise code has no type hints on its functions; the dataclass fields
-  keep theirs, because dataclasses need them. That is the premise of bug C7 and of card P6. The given modules
-  (the mock bank, the clock, `check.py`) are typed, like a third-party library would be.
-- **Size:** about 900 lines of exercise code in 10 modules, counting docstrings and the style's blank lines,
-  plus about 320 lines of given helpers and 250 lines of tests.
+- **Scope:** register (phone, mock-validated bank account, real password), log in, top up through the given
+  bank, balance, send by phone, pending list, accept, and the 30-day expiry. A minimal notifier hosts bug C3.
+- **No type hints in the lab.** The exercise functions are unannotated; only the dataclass fields are typed,
+  because dataclasses need it. The given modules (the bank, the clock, `check.py`) are typed like a library.
+- **Size:**
+
+  | | Lab | Solution |
+  |---|---|---|
+  | Exercise code | ~680 lines in 9 modules (~480 non-blank) | ~1,100 lines (~790 non-blank) |
+  | Given helpers | ~270 lines | same |
+  | Tests | 21 weak tests | 38 tests (10 regression tests) |
 - **Code style** (all code, not a lesson topic):
   - **Blank lines** around blocks; before `return`, `raise` and `yield`; and between `if`/`elif`/`else` and
     `try`/`except`/`finally`.
@@ -27,37 +32,27 @@ Everything below was run on Python 3.15.2 on this machine.
 
 ---
 
-## 0. What is in this repository
-
-Everything is on `main`, and it is public: the lab, the answer key and the solution.
+## 0. The repository, and what was verified
 
 | Where | What it is |
 |---|---|
-| repository root | **The lab the students work on**: the buggy code, `DESIGN.md`, `TICKETS.md`, the weak tests, and the given tools. |
-| `docs/debugging-lab.md` | This guide (the answer key). |
-| `solution/` | The **reference solution**: all bugs fixed and cards P1–P6 applied. It has full modern type hints (`mypy --strict` passes), documentation, and every test, including `tests/test_regressions.py`. It is self-contained: run `python -m pytest` and `python -m mypy` inside `solution/`. |
-| tag `naive` | A correct PeerPay in a plain style, from before the restyle and before C7. Its `tests/test_regressions.py` covers the first 12 bugs. |
-| `main`'s history | `naive` → **one commit per bug** (`bug(C1): …` … `bug(H1): …`, each message explains the bug) → the regression tests removed → tickets, README, this guide → two merges → the restyle (`style: …`) → `bug(C7): …` → the typed solution. Run `git show <commit>` on a bug commit to see its bug. |
-| merged-in histories | The pattern commits (`refactor(P1)` … `refactor(P4)`, untyped first versions of the cards), and the original five-commit student history ("PeerPay: first working version" … "docs: tickets for the debugging lab"). |
+| repository root | **The lab**: the buggy code, `DESIGN.md`, `TICKETS.md`, the weak tests, the given tools. |
+| `docs/debugging-lab.md` | This guide. |
+| `solution/` | The **reference solution**: all bugs fixed and the five cards applied, full type hints (`mypy --strict` passes), docstrings, and every test including `tests/test_regressions.py`. Run `python -m pytest` and `python -m mypy` inside it. |
+| tag `naive` | The slim lab before any bug was planted (correct, untyped), with its regression tests. |
+| history after `naive` | One commit per bug (`bug(C1): …` … `bug(H1): …`, each message explains its bug), then the removal of the regression tests, then the solution and these documents. Earlier history holds the previous, bigger version of the lab. |
 
-**What was verified**
+**Verified**
 
-- **The solution:** all 15 regression tests and all 31 other tests pass, and `mypy --strict` reports no
-  issues in its 28 files.
-- **The lab (root):** every one of the 15 regression tests fails, covering all 13 bugs, while the 25 weak
-  tests pass.
-- **Independence:** applying any one bug's minimal fix (section 2) to the lab turns exactly that bug's
-  regression tests green, and nothing else changes. Each test was run in its own process, because C1 leaks
-  state across tests.
-- **mypy finds C7:** in the lab, annotating `Notifier.__init__ -> None`,
-  `messages_for(self, user_id: int) -> list[str]`, `PeerPayAPI.__init__ -> None` and
-  `notifications(self, token: str)` makes `python -m mypy peerpay` report
-  `api.py: Argument 1 to "messages_for" of "Notifier" has incompatible type "str"; expected "int"`.
-- **mypy finds C3 and C2:** annotating `send(...) -> Transfer` flags all three of C3's bad returns, and
-  `transfers_to(...) -> list[Transfer]` flags C2's generator.
-- **bisect:** `git bisect run` with a C4 test finds C4.
+- **Solution:** all 38 tests pass, and `mypy --strict` reports no issues in its 23 files.
+- **Lab:** all 10 regression tests fail, covering the 9 bugs, while the 21 weak tests pass.
+- **Independence:** each bug's minimal fix (section 2), applied alone to the lab, turns exactly that bug's
+  tests green. Each test ran in its own process, because C1 leaks state across tests.
+- **The type checker:** in the lab, `python -m mypy peerpay` reports nothing. After annotating a handful of
+  signatures it reports C3, C2 and S1 (details in each entry).
+- **Bisect:** `git bisect start --first-parent HEAD naive` with an S3 test finds `bug(S3)`.
 
-**To run the regression tests against the lab code** (from the repository root, in PowerShell):
+**To run the regression tests against the lab** (from the repository root, in PowerShell):
 
 ```powershell
 Copy-Item solution\tests\test_regressions.py tests\
@@ -65,489 +60,219 @@ python -m pytest tests\test_regressions.py
 Remove-Item tests\test_regressions.py
 ```
 
-The C1 test is deliberately last in that file. Once C1 has polluted the shared list, every later send in the
-same process fails.
+The C1 test runs last on purpose: once C1 has polluted the shared list, every later send in that process fails.
 
 ---
 
-## 1. The system the students get
-
-**Story.** Users register with a phone number, a bank account and a password. They top up their wallet from
-the bank, then send money to any registered user by phone number. The money is held until the recipient
-**accepts** it. If the transfer isn't accepted within 30 days, the nightly job **expires** it and the sender
-is refunded. The recipient can also decline, and the sender can cancel the last pending transfer.
+## 1. The lab
 
 ```text
-DESIGN.md · TICKETS.md · README.md
 peerpay/
-├── api.py            PeerPayAPI: one method per request → {"ok": ...}
+├── api.py            PeerPayAPI: register, login, balance, top_up, send, pending, accept,
+│                     notifications, run_expiry → {"ok": ...}
 ├── auth.py           register, login, password hashing
-├── service.py        WalletService: top_up, send, pending, accept, decline, cancel_last,
-│                     expire_pending, adjust, statement
-├── repository.py     the schema, UserDirectory (caches users), Repository (accounts, ledger, transfers)
+├── service.py        WalletService: top_up, send, pending, accept, expire_pending
+├── repository.py     the schema, UserDirectory (caches users), Repository (accounts, transfers)
 ├── validation.py     validate_send, validate_registration, normalize_phone, mask_phone
 ├── money.py          parse_amount, format_amount
 ├── models.py         User, Account, Transfer (mutable dataclasses), status strings
-├── events.py         EventBus, Notifier (push outbox + messages_for), wire_notifications
+├── notifier.py       Notifier: push, messages_for
 ├── errors.py         WalletError and its subclasses
-├── bank_gateway.py   GIVEN: MockBank.validate_account(), MockBank.pull(account, shekels)
+├── bank_gateway.py   GIVEN: MockBank.validate_account(), MockBank.pull(account, amount: Decimal shekels)
 └── clock.py          GIVEN: SystemClock, FakeClock(start=now).advance(days=…)
-tools/support.py      the support team's credit tool
-check.py              GIVEN: invariant checker
-seed.py, demo.py      GIVEN: test users; a scripted day (demo.py --reuse keeps the DB)
-tests/                conftest.py (fixtures api, tokens, clock, db_path, bank) + the weak tests
+check.py              GIVEN: [1] wallets + pending == bank log × 100; [2] phone numbers well-formed
+demo.py               GIVEN: the test users, fresh_db(), a scripted day (--reuse keeps the DB)
 ```
 
-**Given parts** (not part of the exercise):
-- **`MockBank`** writes every pull to a `bank_log` table in the same testing DB. `pull()` takes **shekels**
-  (anything `Decimal()` accepts) and refuses pulls over ₪50,000.
-- **`FakeClock`** starts at the real current time and moves only when you call `advance(...)`.
-- **`check.py`** checks four invariants:
-  1. Stored balance = sum of the ledger.
-  2. Wallets + pending = deposits + adjustments.
-  3. The bank log × 100 = the deposits.
-  4. Every phone number looks like `05XXXXXXXX`.
-- **Test users** live in `seed.py`: Dana `0547654321`, Yossi `0521234567`, Noa `0509876543` and Avi
-  `0581112233`, each with a test password `<name>-test-pass`.
-
-**What students see in the briefing** (intended):
-- **`python demo.py`** runs without errors and the balances look right.
-- **`python check.py`** already reports `[3] the bank pulled 1500000.00 agorot …`. That's S5, a teaser:
-  tell students to note it and move on.
-- Both pending transfers in the demo show the **same** `expires_at`. That's a quiet clue for S3.
-- **`python -m mypy peerpay`** reports **no errors**, because the lab's functions have no type hints and
-  mypy skips unannotated functions. That's the setup for C7 and P6.
+**In the briefing** (all intended):
+- **`python demo.py`** runs cleanly and the balances look right.
+- **`python check.py`** already reports `[1] wallets 8000 + pending 2000 != 1000000.00 pulled from the bank`.
+  That's C2, a teaser: note it and move on.
+- **`python -m mypy peerpay`** says "no issues". Ask why: it skips every function without type hints.
 - **`python demo.py --reuse`** fails every login. That's H1; keep it for the debrief.
 
-### Why the weak tests are green
+**Why the weak tests are green:**
 
 | Test weakness | Bug it hides |
 |---|---|
-| The invalid-input tests live in `test_validation.py`, which runs last (alphabetically) | C1 |
-| The statement test checks only `received_count` | C2 |
-| No test sends to a well-formed but unregistered number | C3 |
-| Accept is tested only on day 1; `expires_at` is never compared with accept | C4 |
-| Notes in tests are short | C5 |
-| No test logs in a counterparty after a statement | C6 |
-| The notification test reads the notifier's outbox directly and never calls the `notifications` endpoint | C7 |
-| The notification test checks only that *a* push happened | S1 |
-| Amounts in tests are whole or half shekels | S2 |
-| The clock is never advanced *before* a send; cancel_last is tested with one pending transfer | S3 |
-| No test covers `tools/support.py` | S4 |
-| The top-up test checks the wallet, not the bank log | S5 |
-| Tests run in a single process | H1 |
+| The invalid-input tests are in `test_validation.py`, which runs last | C1 |
+| The top-up test checks the wallet, not the bank log | C2 |
+| The notification test reads `api.notifier.outbox`, never the endpoint | C3 |
+| Notes in tests are short | C4 |
+| No test logs in a second time | C5 |
+| No test sends to a well-formed but unregistered number | S1 |
+| Amounts are whole shekels | S2 |
+| Accept is tried on day 1 only | S3 |
+| Everything runs in one process | H1 |
 
 ---
 
 ## 2. The bugs
 
-There are **7 core bugs** that every pair works through, **5 stretch bugs**, and **1 hidden bug** with no
-ticket. Each entry gives the exact buggy code, the minimal fix (verified independent), and the pattern card
-that removes the whole family.
+There are **5 core** bugs (everyone), **3 stretch** bugs, and **1 hidden** bug with no ticket.
 
 ### Core
 
-#### C1 · Every transfer fails after one typo (★) · `validation.py` · §7
+#### C1 · Every transfer fails after one typo (★) · `validation.py` · §6
 ```python
 def validate_send(amount, recipient_phone, errors=[]):     # ONE list, shared by every call
-    if amount <= 0:
-        errors.append("amount must be positive")
-
-    if not PHONE_RE.fullmatch(recipient_phone):
-        errors.append("invalid phone number")
-
-    return errors
 ```
-- **Decision behind it:** a mutable default argument, which creates state shared by every request.
+- **Decision behind it:** a mutable default argument, which shares state between all requests.
 - **Discover:**
-  - In the REPL, `validate_send(-1, "x")` and then `validate_send(100, "0521234567")` returns the old
-    errors, and the two results are the same object (`is` → `True`). Ruff B006 flags the default.
-  - The testing lesson: run `pytest tests/test_validation.py tests/test_transfers.py` (invalid tests first)
-    and `test_transfers` turns red. A suite that only passes in one order is hiding shared state.
-- **Minimal fix:** `def validate_send(amount, recipient_phone):`, with `errors = []` as its first line.
-- **Pattern:** P2.
+  - In the REPL, two calls return the same list (`is` → `True`).
+  - Running `pytest tests/test_validation.py tests/test_transfers.py` (invalid tests first) turns
+    `test_transfers` red: a suite that only passes in one order is hiding shared state.
+- **Fix:** `def validate_send(amount, recipient_phone):` with `errors = []` inside.
+- **Card:** P2.
 
-#### C2 · "Total received: ₪0.00" (★) · `repository.py`, `service.py`
+#### C2 · ₪5,000 pulled from the bank for a ₪50 top-up (★★) · `service.py` · §1, §9
 ```python
-# repository.py
-def transfers_to(self, user_id):
-    """Accepted transfers that the user received, streamed instead of loaded all at once."""
-
-    rows = self.conn.execute(...)
-
-    for row in rows:
-        yield _transfer(row)
-
-# service.py, statement()
-"received_count": sum(1 for _ in received),
-"received_total": sum(t.amount for t in received),      # the generator is already exhausted → 0
+self.bank.pull(user.bank_account, amount)       # agorot; pull() takes a Decimal number of shekels
 ```
-- **Decision behind it:** an unclear data-access contract. The function looks like it returns a collection,
-  but it returns a one-time stream.
+- **Decision behind it:** a bare `int` with no unit crosses a boundary. The mock bank silently accepts it.
 - **Discover:**
-  - Put a breakpoint in `statement` and look at `type(received)`. In the REPL:
-    `g = (x for x in [1, 2, 3]); sum(1 for _ in g), sum(g)` → `(3, 0)`.
-  - With type hints: annotate `transfers_to(self, user_id: int) -> list[Transfer]`, and mypy reports that
-    a generator function must return a `Generator`.
-- **Minimal fix:** `return [_transfer(row) for row in rows]`.
-- **Pattern:** P4 and P6.
+  - `check.py` invariant `[1]`; then read `MockBank.pull`'s signature and docstring next to the call.
+  - **Type hints:** annotate `WalletService.__init__(self, conn, bank: MockBank, clock, notifier) -> None`
+    and `top_up(self, user_id: int, amount: int) -> None`, and mypy reports
+    `Argument 2 to "pull" of "MockBank" has incompatible type "int"; expected "Decimal"`.
+- **Fix:** `self.bank.pull(user.bank_account, Decimal(amount) / 100)`.
+- **Card:** P1, and P5.
 
-#### C3 · "Sent ✓", but nothing was sent (★★) · `service.py`, `api.py` · §6
+#### C3 · My notifications screen is always empty (★★) · `api.py` · §8, §9
 ```python
-# service.py, send()
-recipient = self.users.by_phone(phone)
-
-if recipient is None:
-    print("no such user:", phone)            # print, to the server console …
-
-    return                                   # … then None
-
-...
-
-if sender.balance < amount:
-    return False                             # False
-
-...
-
-return True
-
-# api.py, send()
-if result is False:
-    return {"ok": False, "error": "insufficient_funds", ...}
-
-return {"ok": True, "message": "Sent ✓"}     # None lands here
+def notifications(self, token):
+    return {"ok": True, "messages": self.notifier.messages_for(token)}    # a token where a user id belongs
 ```
-- **Decision behind it:** four failure conventions in one function (an exception for validation, print +
-  `None`, `False`, `True`).
-- **Clue:** `InsufficientFunds` and `UnknownRecipient` are imported in `service.py` but never raised.
+`messages_for` compares the token with int user ids, and `"x3Fq…" == 2` is simply `False`. Nothing raises,
+and a made-up token isn't rejected either.
+- **Decision behind it:** no type hints, so nothing can see that a `str` went where an `int` belongs. Every
+  other endpoint calls `self._user_id(token)`.
 - **Discover:**
-  - Step through the unknown-number case and watch `send` return `None`. Then list every `return` and what
-    each one means, and compare the list with §6.
-  - With type hints: annotate `send(...) -> Transfer`, and mypy flags all three wrong returns.
-- **Minimal fix:**
-  - `raise UnknownRecipient(phone)` instead of the print and return.
-  - `raise InsufficientFunds()` instead of `return False`.
-  - `return transfer` instead of `return True`.
-- **Pattern:** P3 (the `@endpoint` error boundary) and P6.
+  - **Debugger:** a breakpoint in `messages_for` shows `user_id = 'x3Fq…'`.
+  - **Type hints:** annotate `Notifier.__init__(self) -> None`, `messages_for(self, user_id: int) ->
+    list[str]`, `PeerPayAPI.__init__(...) -> None` and `notifications(self, token: str)`, and mypy reports
+    `Argument 1 to "messages_for" of "Notifier" has incompatible type "str"; expected "int"`.
+- **Fix:** `user_id = self._user_id(token)` (in a `try`/`except WalletError`, like the other endpoints), then
+  `messages_for(user_id)`.
+- **Card:** P5.
 
-#### C4 · "Expires tomorrow", but it already expired (★★, *bisect*) · `api.py` · §5
+#### C4 · A long note ate my ₪100 (★★) · `repository.py`, `service.py`, `validation.py` · §3
 ```python
-"expires_at": (t.created_at + timedelta(days=31)).isoformat()   # a month
-```
-`service.accept()` refuses once `clock() - created_at >= EXPIRY`, where `EXPIRY` is 30 days.
-- **Decision behind it:** a business rule duplicated in the presentation layer, with a second definition of "a month".
-- **Discover:**
-  - Spec diff on §5, then grep for `timedelta(` to find two definitions.
-  - **Bisect:** write the regression test in a **new, untracked** file, then run:
-    ```powershell
-    git bisect start --first-parent HEAD naive
-    git bisect run python -m pytest -q tests/test_ticket_c4.py
-    ```
-    It finds `bug(C4): …`. A good test: create a transfer, advance the clock to `expires_at − 1 minute`, and
-    accept. It must succeed.
-- **Minimal fix:** `(t.created_at + EXPIRY)`, with `from .service import EXPIRY, WalletService`.
-- **Pattern:** P3 (`Transfer.expires_at` and `is_expired()` in the model).
-
-#### C5 · A long note ate my ₪100 (★★) · `repository.py`, `service.py`, `validation.py` · §4
-```python
-# repository.py: every write method ends with
+# repository.py: every write ends with
 self.conn.commit()
 
 # service.py, send(): no transaction
 sender.balance -= amount
-self.repo.save_account(sender)                                                 # committed
-transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note=note)   # CHECK fails
-self.repo.add_ledger(...)
+self.repo.save_account(sender)                                           # committed
+transfer = self.repo.insert_transfer(...)    # CHECK (length(note) <= 140) → IntegrityError
 ```
-- **Decision behind it:** repository methods commit on their own, so the service can't make a use case
-  atomic. The note limit exists only as a DB `CHECK (length(note) <= 140)`, which runs after the money has moved.
-- **Clues:** `MAX_NOTE` is defined in `validation.py` but never used. The `sqlite3.IntegrityError` isn't a
-  `WalletError`, so it escapes the API as a crash.
-- **Discover:**
-  - Reproduce the ticket, then run `check.py`: `[1] stored balance … != ledger total …` and `[2] …`.
-  - Look at the data at rest: the balance went down, but there is no ledger row and no transfer. Grep for `commit()`.
-  - **Family:** `accept()` and `_refund()` also write in several separately committed steps.
-- **Minimal fix (makes the ticket pass):** validate the note up front. Add `note` to `validate_send`, check
-  `len(note) > MAX_NOTE`, and pass `note` from `send()`.
+- **Decision behind it:** the repository commits on its own, so the service can't make a use case atomic.
+  The note limit exists only as a DB `CHECK`, which runs after the money has moved.
+- **Clues:** `MAX_NOTE` is defined but never used. The `IntegrityError` isn't a `WalletError`, so it escapes
+  the API as a crash.
+- **Discover:** `check.py` invariant `[1]`. Inspect the data at rest. Grep for `commit()`.
+  - **Family:** `accept()` and the expiry job also commit in several separate steps.
+- **Fix (makes the ticket pass):** check `len(note) > MAX_NOTE` in `validate_send`, and pass the note to it.
 - **The real fix:** one transaction per use case (P3).
-- **Pattern:** P3 + P2.
+- **Card:** P3 and P2.
 
-#### C6 · Yossi's phone number turned into `05*-***-4567` (★★★, the centerpiece) · `service.py` · §10, §2
+#### C5 · Dana can't log in since this morning (★★★, the centerpiece) · `service.py` · §7, §2
 ```python
-# service.py, statement()
-other = self.users.get(transfer.other_party(user_id))    # the SAME object the UserDirectory cache holds
-other.phone = mask_phone(other.phone)                    # "privacy": mutates the shared object
+# service.py, pending(): the sender object is the one in the UserDirectory cache
+sender = self.users.get(transfer.sender_id)
+sender.phone = mask_phone(sender.phone)          # "for display": mutates the shared object
 
 # auth.py, login()
-user = wallet.users.by_phone(normalize_phone(phone))     # the row is found by the real phone, but the CACHED object is returned
+user = wallet.users.by_phone(normalize_phone(phone))   # the real phone finds the row; the cache returns the masked object
 user.last_login = wallet.clock()
-wallet.users.save(user)                                  # UPDATE users SET phone = ?, … → writes the masked phone
+wallet.users.save(user)                                # UPDATE users SET phone = ?, … → writes the masked phone
 ```
-When Dana views her statement, it masks Yossi's cached object. His next login still works, but it saves the
-masked phone, so every login after that fails.
+When Yossi opens his pending list, Dana's cached object is masked. Her next login still works, but it saves
+the masked phone, so every login after that fails.
 - **Decision behind it:**
-  - Formatting that mutates instead of returning a new value (no command–query separation).
-  - Shared mutable entities in a cache.
+  - Formatting that mutates instead of returning a new value.
+  - A cache of mutable objects.
   - "Save the whole object" instead of "update what changed".
 - **Discover:**
-  - `check.py` reports `[4] user 2: stored phone number '05*-***-4567' …`.
-  - "Who writes `users.phone`?": only `save()`.
-  - "Who changes `user.phone` in memory?": *freeze it and let it crash*. Temporarily make `User` a
-    `@dataclass(frozen=True)`, and `FrozenInstanceError: cannot assign to field 'phone'` points at
-    `statement()`.
-- **Minimal fix:** delete the assignment, and format `({mask_phone(other.phone)})`.
-- **Pattern:** P4 (immutable users, no cache, `touch_last_login`) + P2 (`PhoneNumber.masked()`).
-
-#### C7 · My notifications screen is always empty (★★) · `api.py` · §11, §13
-```python
-# api.py: every other endpoint calls self._user_id(token)
-def notifications(self, token):
-    return {"ok": True, "messages": self.notifier.messages_for(token)}    # a token where a user id belongs
-
-# events.py
-def messages_for(self, user_id):
-    return [text for uid, text in self.outbox if uid == user_id]         # 2 == "x3Fq…" is just False
-```
-Nothing raises: comparing an `int` with a `str` is simply `False`. The list is empty for everyone, and a
-made-up token isn't rejected either, because `_user_id()` is never called.
-- **Decision behind it:** no type hints, so nothing can tell that a `str` token went where an `int` user id
-  belongs. The same mistake in SQL would have "worked" (SQLite compares `'2'` with `2` loosely); Python's
-  `==` doesn't.
-- **Discover:**
-  - **Debugger:** a breakpoint in `messages_for` shows `user_id = 'x3Fq…'`, a token. Compare
-    `notifications` with the 11 other endpoints.
-  - **Type hints:** annotate `Notifier.__init__(self) -> None`, `messages_for(self, user_id: int) ->
-    list[str]`, `PeerPayAPI.__init__(...) -> None` and `notifications(self, token: str)`, then run
-    `python -m mypy peerpay`:
-    `Argument 1 to "messages_for" of "Notifier" has incompatible type "str"; expected "int"`.
-    mypy also asks for annotations on `outbox` and `_sessions`, which is the next step of the card.
-  - **The lesson:** mypy skips functions that have no hints, so an untyped program "passes" a type check.
-    The hints are what give the checker something to compare.
-- **Minimal fix:** `user_id = self._user_id(token)` (inside `try`/`except WalletError`, like the other
-  endpoints), then `messages_for(user_id)`.
-- **Pattern:** P6.
+  - `check.py` invariant `[2]`.
+  - "Who changes `user.phone`?": *freeze it and let it crash*. A temporary `@dataclass(frozen=True)` on
+    `User` makes `FrozenInstanceError` point at `pending()`.
+- **Fix:** delete the assignment, and use `mask_phone(sender.phone)` in the tuple.
+- **Card:** P4 and P2.
 
 ### Stretch
 
-#### S1 · Every notification says "expired" (★) · `events.py` · §11
+#### S1 · "Sent ✓", but nothing was sent (★★) · `service.py`, `api.py` · §5
 ```python
-for kind in TEMPLATES:
-    bus.subscribe(kind, lambda transfer: notifier.push(kind, transfer))   # every handler sees the LAST kind
+if recipient is None:
+    print("no such user:", phone)
+
+    return                         # None …
+
+if sender.balance < amount:
+    return False                   # … or False …
+
+return True                        # … or True; and the API checks only `result is False`
 ```
-Every event uses the "expired" template, and because "expired" notifies the sender, the recipient gets
-nothing.
-- **Decision behind it:** closures capture variables, not values.
-- **Discover:** Print inside a handler, or `[f() for f in [lambda: k for k in "abc"]]` → `['c', 'c', 'c']`.
-  Ruff B023 flags it.
-- **Fix:** `lambda transfer, kind=kind: …`, or `functools.partial(notifier.push, kind)`.
+- **Decision behind it:** four failure conventions in one function.
+- **Discover:** step through the unknown-number case. **Type hints:** `send(...) -> Transfer` makes mypy flag all
+  three returns.
+- **Fix:** `raise UnknownRecipient(phone)`, `raise InsufficientFunds()`, `return transfer`.
+- **Card:** P3 (the error boundary) and P5.
 
 #### S2 · I sent ₪19.99, Yossi received ₪19.98 (★) · `money.py` · §1
 ```python
-def parse_amount(text):
-    try:
-        return int(float(text) * 100)        # float("19.99") * 100 == 1998.9999999999998 → 1998
+return int(float(text) * 100)      # float("19.99") * 100 == 1998.9999999999998 → 1998
 ```
-- **Decision behind it:** passing an exact quantity through an approximate type.
-- **Discover:** Evaluate `float("19.99") * 100` in the debugger (`repr` shows what the formatting hides).
-  Then test a table of amounts: `0.29` → 28 too.
 - **Fix:** `int(Decimal(str(text).strip()) * 100)`, catching `InvalidOperation`.
-- **Pattern:** P1.
+- **Card:** P1.
 
-#### S3 · Today's transfers "expired" tonight; "cancel last" cancels the wrong one (★★) · `repository.py`, `service.py` · §9, §12
+#### S3 · "Expires tomorrow", but it already expired (★★, *bisect*) · `api.py` · §4
 ```python
-# repository.py
-def insert_transfer(self, sender_id, recipient_id, agorot, note, created_at=datetime.now()):
-...
-" ORDER BY created_at DESC LIMIT 1"
-
-# service.py: send() doesn't pass the clock
-transfer = self.repo.insert_transfer(sender_id, recipient.id, amount, note=note)
+"expires_at": (t.created_at + timedelta(days=31)).isoformat()    # a month
 ```
-The default is evaluated once, at import. On a long-running server every new transfer looks weeks old, so
-the nightly job expires it. And all transfers share one timestamp, so `ORDER BY created_at` hits a tie and
-SQLite returns the *oldest* row (verified; with an index on `(sender_id, created_at)` it returned the newest).
-- **Decision behind it:** defaults are evaluated at definition time; the code bypasses the injected clock; and
-  it relies on an order the query doesn't guarantee.
-- **Discover:** In a test, `clock.advance(days=35)`, then send, then `api.run_expiry()` → `expired: 1`.
-  Inspect the table: every `created_at` is identical.
-  - **Family:** "what else is computed once at import?" leads to H1.
-- **Fix:**
-  - Drop the default, so `created_at` is required.
-  - Pass `created_at=self.clock()` from `send()`.
-  - Order by `id DESC` instead of `created_at DESC`.
-- **Pattern:** P5.
-
-#### S4 · A support credit disappeared (★★★) · `service.py`, `tools/support.py` · §3, §8
-```python
-# service.py
-self._accounts = {}                 # user id -> Account, loaded once
-
-def _account(self, user_id):
-    if user_id not in self._accounts:
-        self._accounts[user_id] = self.repo.account(user_id)
-
-    return self._accounts[user_id]
-
-# tools/support.py: "Quick credit: one UPDATE, no need to start the whole app for it."
-conn.execute("UPDATE accounts SET balance = balance + ? WHERE user_id = (SELECT id …)", ...)
-```
-- **Decision behind it:** duplicated state (the balance column, the ledger and the cached `Account`),
-  together with a layer bypass.
-- **Discover:** Reproduce in one test: send, `support.credit(db_path, …)`, send again. Then run `check.py`:
-  `[1]` and `[2]` fire. Ask "who writes `balance`?": grep finds three writers in two layers.
-- **Fix:** `_account()` returns `self.repo.account(user_id)` (no cache), and the tool goes through
-  `api.wallet.adjust(...)`, which writes a ledger entry.
-- **Pattern:** P4 (no balance column at all).
-
-#### S5 · ₪5,000 pulled from the bank for a ₪50 top-up (★★) · `service.py` · §1
-```python
-self.bank.pull(user.bank_account, amount)       # amount is agorot; pull() expects shekels
-```
-- **Decision behind it:** primitive obsession. An `int` has no unit, and `MockBank.pull` happily accepts an `int`.
-- **Discover:** `check.py` invariant `[3]`. Read `MockBank.pull`'s docstring next to the call, and ask "what
-  unit is this number in?"
-  - **Clue:** a top-up of ₪600 or more fails with "amount out of range: 60000.00".
-  - **Why type hints alone don't catch this:** `int` is a legal type for `pull()`. Only a `Money` type with
-    a unit (P1) does.
-- **Fix:** `self.bank.pull(user.bank_account, Decimal(amount) / 100)`.
-- **Pattern:** P1 (`BankAdapter` + `Money`).
+`accept()` refuses at `EXPIRY`, which is 30 days.
+- **Decision behind it:** a rule duplicated in the API, with a second meaning of "a month".
+- **Discover:** spec diff, and grep for `timedelta(`. Or bisect, with the test in a new, untracked file:
+  ```powershell
+  git bisect start --first-parent HEAD naive
+  git bisect run python -m pytest -q tests/test_ticket_s3.py
+  ```
+- **Fix:** `(t.created_at + EXPIRY)`, with `from .service import EXPIRY, WalletService`.
+- **Card:** P3 (`Transfer.expires_at` in the model).
 
 ### Hidden (no ticket)
 
 #### H1 · After a restart, no existing user can log in (★★) · `auth.py` · §2
 ```python
-SALT = os.urandom(16)                       # a new salt in every process; never stored with the hash
-
-
-def hash_password(password):
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), SALT, ITERATIONS)
-
-    return f"pbkdf2_sha256${ITERATIONS}${digest.hex()}"
-
-
-def verify_password(password, stored):
-    ...
-
-    return digest.hex() == digest_hex          # also not constant-time
+SALT = os.urandom(16)              # a new salt in every process, and never stored with the hash
 ```
-Tests, `demo.py` and the README's shell example all register and log in within one process, so it stays
-hidden. Pairs who hunt S3's family find it. **Reveal it in the debrief** with `python demo.py` followed by
-`python demo.py --reuse`.
-- **Fix:** a per-user `salt = os.urandom(16)` inside `hash_password`, stored as
-  `pbkdf2_sha256$<iterations>$<salt>$<hash>`, and checked with `hmac.compare_digest`.
-- **Data repair:** existing hashes can't be repaired; users must reset their passwords. That's a good
-  discussion point.
+- **How it's found:** pairs who hunt C1's family ("what else is evaluated only once?") find it. Otherwise,
+  reveal it in the debrief: `python demo.py`, then `python demo.py --reuse`.
+- **Fix:** a per-user salt, stored as `pbkdf2_sha256$<iterations>$<salt>$<digest>`, checked with
+  `hmac.compare_digest`.
+- **Discussion point:** existing hashes can't be repaired, so users must reset their passwords.
 
 ---
 
-## 3. The patterns (the refactoring round)
+## 3. The pattern cards (the refactoring round)
 
-Each pair takes one card. The reference answer for every card is in `solution/`, the fully typed
-version. The older `refactor(P1)` … `refactor(P4)` commits in the history show each card on its own, as an
-untyped first version.
+Each pair takes one card. The reference answer for every card is in `solution/`.
 
-| Card | What changes (see `solution/`) | Removes |
+| Card | In `solution/` | Removes |
 |---|---|---|
-| **P1 Currency** | `money.Money`: an immutable int number of agorot that refuses floats and `bool`, is created from text only by `Money.parse`, and combines only with the same currency. `bank.BankAdapter` is the only code that converts to the bank's shekels. | S2, S5 |
-| **P2 Validation** | `values.py`: value objects (`PhoneNumber`, `Note`, `BankAccount`, `Password`) that can only exist when valid. `validation.py`: `parse_send` / `parse_registration` collect one request's problems in a fresh list and return a typed `SendRequest` / `Registration` before anything changes. | C1, (C5), (C6) |
-| **P3 Transaction execution** | `repository.UnitOfWork` (`BEGIN IMMEDIATE` … `COMMIT` or `ROLLBACK`; repositories never commit). `commands.TopUp` / `SendTransfer`. `models.Transfer` as a state machine (`moved_to`, `ALLOWED`) that owns the expiry rule (`expires_at`, `is_expired`). `api.endpoint`: the one error boundary. | C3, C4, C5 |
-| **P4 DB usage** | The ledger as the only source of truth: no balance column, a balance is `SUM(ledger)`. `UserRepo`, `LedgerRepo` and `TransferRepo` return immutable objects in lists and keep no cache. `touch_last_login` updates one column. Ledger and transfer writes take keyword-only arguments. | C2, C6, S4 |
-| **P5 Time** | The clock is injected (`type Clock = Callable[[], datetime]`), and nothing runs at import time. | S3, H1 |
-| **P6 Type hints** | Every function, method, fixture and test is fully annotated with modern hints: PEP 695 `type` aliases and generics (`def endpoint[**P]`, `def collect[T]`), `Self`, `Protocol` (`BankGateway`, `AccountChecker`), `Literal` (`EventKind`, `LedgerKind`), `X \| None`. Typed results (`Statement`, `PendingItem`) replace loose dicts. `mypy --strict` passes. | C7, and it exposes C3 and C2 |
+| **P1 Currency** | `money.Money`: immutable int agorot that refuses floats and `bool`, is created from text only by `Money.parse`, and combines only with the same currency. `bank.BankAdapter` is the only code that converts to the bank's shekels. | C2, S2 |
+| **P2 Validation** | `values.py`: `PhoneNumber`, `Note`, `BankAccount` and `Password` can only exist when valid, and `PhoneNumber.masked()` returns a new string. `validation.parse_send` / `parse_registration` collect one request's problems in a fresh list and return a typed result before anything changes. | C1, (C4), (C5) |
+| **P3 Transactions** | `repository.UnitOfWork`: `BEGIN IMMEDIATE` … `COMMIT` or `ROLLBACK`, and the repositories never commit. `api.endpoint` is the one error boundary. `Transfer.expires_at` and `settled()` keep the expiry and settle-once rules in the model. | C4, S1, S3 |
+| **P4 DB usage** | The repositories return immutable objects in lists and keep no cache. Writes change only what changed: `touch_last_login`, and `UPDATE accounts SET balance = balance - ? WHERE … AND balance >= ?`, so the database itself checks and updates the balance atomically. | C5 |
+| **P5 Type hints** | Every function, method, fixture and test is annotated with modern hints: PEP 695 `type` aliases and generics (`def endpoint[**P]`, `def collect[T]`), `Self`, `Protocol`, `ClassVar`, `StrEnum`, `X \| None`. Typed results (`PendingItem`, `SendRequest`) replace loose tuples and dicts. `mypy --strict` passes. | C3, and it exposes C2 and S1 |
 
-**How to run card P6 in class:**
-1. Annotate the functions around a ticket. For C7: `messages_for`, `notifications`, and the two
-   `__init__` methods.
-2. Run `python -m mypy peerpay`, and fix what it reports.
-3. Widen the annotations step by step. The goal, met in `solution/`, is `python -m mypy --strict` with no errors.
+**Running card P5 in class:**
+1. Annotate the functions around a ticket. For C3: `messages_for`, `notifications`, and both `__init__`s.
+2. Run `python -m mypy peerpay` and fix what it reports.
+3. Widen the annotations step by step, toward `--strict`.
 
 The point to make: mypy checks only annotated code, so an untyped program "passes" a type check.
-
-Essential snippets from `solution/`:
-
-```python
-# P1: money.py
-@total_ordering
-@dataclass(frozen=True, slots=True)
-class Money:
-    """An exact amount of money: ``Money(1999)`` is ₪19.99."""
-
-    agorot: int
-    currency: str = "ILS"
-
-    @classmethod
-    def parse(cls, text: str) -> Self: ...          # Decimal, at most 2 places: "19.99" → Money(1999)
-
-    def __add__(self, other: Self) -> Self:
-        self._check_same_currency(other)
-
-        return replace(self, agorot=self.agorot + other.agorot)
-
-
-# P2: validation.py
-def parse_send(phone_text: str, amount_text: str, note_text: str) -> SendRequest:
-    errors: list[str] = []                          # fresh for every request
-    recipient = collect(lambda: PhoneNumber.parse(phone_text), errors)
-    amount = collect(lambda: positive(Money.parse(amount_text)), errors)
-    note = collect(lambda: Note(note_text), errors)
-
-    if recipient is None or amount is None or note is None:
-        raise ValidationError(errors)
-
-    return SendRequest(recipient, amount, note)
-
-
-# P3: repository.py, models.py, api.py
-class UnitOfWork:
-    def __enter__(self) -> Self:
-        self.conn = sqlite3.connect(self._db_path, timeout=5, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("BEGIN IMMEDIATE")
-        ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None
-    ) -> None:
-        try:
-            self.conn.execute("COMMIT" if exc_type is None else "ROLLBACK")
-
-        finally:
-            self.conn.close()
-
-
-EXPIRY = timedelta(days=30)                         # the only definition of "a month"
-
-
-def endpoint[**P](method: Callable[P, Response]) -> Callable[P, Response]: ...
-
-
-# P4: repository.py
-class LedgerRepo:
-    def add(
-        self,
-        user_id: int,
-        amount: Money,
-        *,
-        kind: LedgerKind,
-        created_at: datetime,
-        transfer_id: int | None = None,
-        note: str = ""
-    ) -> None: ...
-
-    def balance(self, user_id: int) -> Money: ...   # derived: SELECT COALESCE(SUM(agorot), 0) ...
-
-
-# P6: api.py — the C7 call can't be written wrongly any more
-@endpoint
-def notifications(self, token: str) -> Response:
-    return {"messages": self.notifier.messages_for(self._user_id(token))}
-```
-
-Also in the solution: slow work (the bank, password hashing) runs **outside** transactions, and events are
-published only after the commit.
 
 ---
 
@@ -555,61 +280,49 @@ published only after the commit.
 
 | Time | Activity |
 |---|---|
-| 0:00–0:10 | **Briefing.** Read DESIGN.md (the rules and the worked example). Run `python demo.py`, `python check.py` (note the `[3]` teaser) and `python -m mypy peerpay` ("no issues": why?). Show a breakpoint and Evaluate Expression. Put the procedure from TICKETS.md on the board. |
-| 0:10–0:55 | **Debugging round, in pairs.** Core tickets C1 → C7, then stretch for fast pairs. Each fix = a failing test + the minimal fix. No refactoring yet. |
-| 0:55–1:20 | **Refactoring round.** Each pair takes one pattern card (P1–P4 or P6) and applies it, keeping all their tests green. |
-| 1:20–1:30 | **Debrief.** Fill in the table below. Run `python demo.py` and then `python demo.py --reuse` to reveal H1 if nobody found it. |
+| 0:00–0:10 | **Briefing.** Read DESIGN.md (the 9 rules and the worked example). Run `demo.py`, `check.py` (note the `[1]` teaser) and `mypy` ("no issues": why?). Show a breakpoint and Evaluate Expression. |
+| 0:10–0:50 | **Debugging, in pairs:** C1 → C5, then stretch. Each fix = a failing test + the minimal fix. |
+| 0:50–1:15 | **Refactoring:** each pair applies one card, keeping all its tests green. |
+| 1:15–1:30 | **Debrief:** the table below. Reveal H1 (`demo.py`, then `demo.py --reuse`). |
 
-**45-minute variant:** C1, C3, C6 and C7 in 25 minutes, the P6 card in 15 minutes (annotate, run mypy, watch
-it find C7 and C3), and a 5-minute debrief.
-
-### Techniques this lab practices
+**45-minute variant:** C1, C3 and C4 in 25 minutes, card P5 in 15 minutes (annotate, run mypy, watch it find
+C3 and S1), and a 5-minute debrief.
 
 | Technique | Bugs |
 |---|---|
-| Spec diff: the DESIGN rule next to the code path | C3, C4, C5, S4, S5 |
-| Debugger: breakpoints, Evaluate Expression, the call stack | C2, C3, C7, S2 |
-| Type hints + a type checker (`python -m mypy`) | C7, C3, C2 |
-| Identity checks (`is`, `id()`) | C1, C6 |
-| *Freeze it and let it crash* (a temporary `frozen=True`) | C6 |
-| Invariant checking (`check.py`) | C5, C6, S4, S5 |
-| "Who writes X?" (find usages / grep) | C4, C6, S4 |
+| Spec diff (DESIGN rule vs. code) | C2, C4, S1, S3 |
+| Debugger (breakpoints, Evaluate Expression) | C3, C5, S1, S2 |
+| Type hints + `python -m mypy` | C3, C2, S1 |
+| Invariant checking (`check.py`) | C2, C4, C5 |
+| Identity (`is`) and *freeze it and let it crash* | C1, C5 |
 | Test-order dependence | C1 |
-| Controlling time (`FakeClock.advance`) | C4, S3 |
-| `repr()` instead of formatted output | S2 |
-| Inspecting data at rest (sqlite3 CLI / DB Browser) | C5, C6, S3 |
-| Static analysis (`ruff check --select B`) | C1, S1 |
-| `git bisect run` | C4 |
-| Hunting the family | H1 (via S3), C5 (`accept`, `_refund`) |
+| Controlling time (`FakeClock`) | S3 |
+| `git bisect run` | S3 |
+| Hunting the family | H1 (via C1), C4 (`accept`, the expiry job) |
 
 ---
 
-## 5. Debrief table (fill it in with the class)
+## 5. Debrief table
 
-| Bug | The design decision behind it | The general rule | Pattern |
+| Bug | The design decision behind it | The general rule | Card |
 |---|---|---|---|
-| C1 | A mutable default argument | Defaults are evaluated once; no state shared by accident | P2 |
-| C2 | A generator where a list was expected | Make the data-access contract explicit (and typed) | P4, P6 |
-| C3 | Four ways to signal failure | One error convention, one boundary | P3, P6 |
-| C4 | A rule copied into the API, with a second meaning of "a month" | Each rule lives in exactly one place, in the model | P3 |
-| C5 | Repositories commit; act first, validate later | Whoever owns the use case owns the transaction; validate, then act | P3, P2 |
-| C6 | Formatting that mutates, a shared cache, "save everything" | Command–query separation; immutable entities; targeted writes | P4, P2 |
-| C7 | No type hints: a `str` token passed where an `int` id belongs | Annotate everything and let a type checker compare | P6 |
-| S1 | A closure over a loop variable | Bind values explicitly | — |
+| C1 | A mutable default argument | Defaults are evaluated once; share state only on purpose | P2 |
+| C2 | A bare number with no unit crossing a boundary | Units live in types; convert in one adapter | P1, P5 |
+| C3 | No type hints: a `str` token where an `int` id belongs | Annotate everything, and let a type checker compare | P5 |
+| C4 | Repositories commit; act first, validate later | The use case owns the transaction; validate, then act | P3, P2 |
+| C5 | Formatting that mutates, a cache of mutable objects, "save everything" | Command–query separation; immutable entities; targeted writes | P4, P2 |
+| S1 | Four ways to signal failure | One error convention, one boundary | P3, P5 |
 | S2 | `float` for money | Choose the representation by the required precision | P1 |
-| S3 | A default evaluated at import; bypassing the clock; an unguaranteed order | Time is a dependency; identities, not timestamps | P5 |
-| S4 | Duplicated state, plus a layer bypass | A single source of truth; respect the layers | P4 |
-| S5 | A bare number with no unit crossing a boundary | Units live in types; convert in one adapter | P1 |
-| H1 | A salt computed at import and never stored | Nothing runs at import time; store what you need to verify later | P5 |
+| S3 | A rule copied into the API | Each rule lives in exactly one place, in the model | P3 |
+| H1 | A salt computed at import and never stored | Nothing runs at import time; store what you need later | — |
 
 ---
 
 ## 6. Maintaining the lab
 
-- **To change a bug:** change it in the root code, then copy `solution/tests/test_regressions.py` into
-  `tests/` and check that each regression test fails on its own and that each minimal fix turns only its own
-  test green.
-- **The solution must stay strict:** run `python -m pytest` and `python -m mypy` inside `solution/`.
-- **Passwords in tests:** tests use 1,000 PBKDF2 iterations (a `monkeypatch` in `conftest.py`). The code
+- **To change a bug:** change it in the root code. Then copy `solution/tests/test_regressions.py` into
+  `tests/`, and check that each test fails on its own and that each minimal fix turns only its own test green.
+- **Keep the solution strict:** run `python -m pytest` and `python -m mypy` inside `solution/`.
+- **Passwords in tests:** tests use 1,000 PBKDF2 iterations (a `monkeypatch` in `conftest.py`); the code
   default is 600,000.
 - **The DB:** `testing.db` is always a testing DB, and `demo.py` re-creates it unless you pass `--reuse`.

@@ -29,16 +29,16 @@ python -m mypy peerpay     # the type checker (it only checks functions that hav
 The API is `peerpay.api.PeerPayAPI`. To try something by hand, in a Python shell:
 
 ```python
-import seed
+import demo
 from peerpay.api import PeerPayAPI
-seed.fresh_db()                       # re-creates testing.db with the test users
-api = PeerPayAPI(seed.DB_PATH)
+demo.fresh_db()                       # re-creates testing.db with the test users
+api = PeerPayAPI(demo.DB_PATH)
 dana = api.login("0547654321", "dana-test-pass")["token"]
 api.top_up(dana, "100")
 api.balance(dana)
 ```
 
-The test users and their test passwords are in `seed.py`. In tests, use the fixtures from
+The test users and their test passwords are in `demo.py`. In tests, use the fixtures from
 `tests/conftest.py`: `api`, `tokens` (Dana, Yossi and Noa, registered and logged in), `clock` (a
 `FakeClock`), and `db_path`.
 
