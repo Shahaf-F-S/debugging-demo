@@ -24,7 +24,9 @@ def test_sent_money_is_held_until_accepted(api: PeerPayAPI, tokens: dict[str, st
 
     (item,) = api.pending(yossi)["pending"]
 
-    assert (item["from"], item["amount"], item["note"]) == ("Dana", "₪30.00", "pizza")
+    assert (item["from"], item["phone"], item["amount"], item["note"]) == (
+        "Dana", "05*-***-4321", "₪30.00", "pizza"
+    )
 
 
 def test_accept_credits_the_recipient(api: PeerPayAPI, tokens: dict[str, str]) -> None:
@@ -34,25 +36,6 @@ def test_accept_credits_the_recipient(api: PeerPayAPI, tokens: dict[str, str]) -
 
     assert api.accept(yossi, api.pending(yossi)["pending"][0]["id"])["ok"]
     assert balance(api, yossi) == 30_00
-    assert api.pending(yossi)["pending"] == []
-
-
-def test_decline_refunds_the_sender(api: PeerPayAPI, tokens: dict[str, str]) -> None:
-    dana, yossi = tokens["Dana"], tokens["Yossi"]
-    api.top_up(dana, "100")
-    api.send(dana, YOSSI[0], "30")
-
-    assert api.decline(yossi, api.pending(yossi)["pending"][0]["id"])["ok"]
-    assert balance(api, dana) == 100_00
-
-
-def test_sender_can_cancel_a_pending_transfer(api: PeerPayAPI, tokens: dict[str, str]) -> None:
-    dana, yossi = tokens["Dana"], tokens["Yossi"]
-    api.top_up(dana, "100")
-    api.send(dana, YOSSI[0], "30")
-
-    assert api.cancel_last(dana)["ok"]
-    assert balance(api, dana) == 100_00
     assert api.pending(yossi)["pending"] == []
 
 
@@ -104,3 +87,14 @@ def test_cannot_accept_someone_elses_transfer(api: PeerPayAPI, tokens: dict[str,
     transfer_id = api.pending(yossi)["pending"][0]["id"]
 
     assert api.accept(noa, transfer_id)["error"] == "not_found"
+
+
+def test_a_transfer_can_be_accepted_only_once(api: PeerPayAPI, tokens: dict[str, str]) -> None:
+    dana, yossi = tokens["Dana"], tokens["Yossi"]
+    api.top_up(dana, "100")
+    api.send(dana, YOSSI[0], "30")
+    transfer_id = api.pending(yossi)["pending"][0]["id"]
+    api.accept(yossi, transfer_id)
+
+    assert api.accept(yossi, transfer_id)["error"] == "not_found"
+    assert balance(api, yossi) == 30_00

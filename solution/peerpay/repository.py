@@ -1,25 +1,23 @@
-"""All SQL of PeerPay (DESIGN.md §3, §8). Money columns hold agorot.
+"""All SQL of PeerPay. Money columns hold agorot.
 
 Every use case runs in one ``UnitOfWork``: one transaction that commits when the use case
-succeeds and rolls back when it raises. The repositories inside it never commit by themselves.
-
-The ledger is append-only and is the single source of truth for money: no balance is stored
-anywhere, a balance is the sum of the user's ledger entries. Repositories return immutable
-objects in lists, keep no caches, and write only what changed.
+succeeds and rolls back when it raises (bug C4). The repositories inside it never commit by
+themselves, return immutable objects, keep no caches, and write only what changed (bug C5).
+Balances change by an UPDATE that does the arithmetic in the database, never by writing back a
+value that was read earlier.
 """
 
 import sqlite3
 from datetime import datetime
 from os import PathLike
 from types import TracebackType
-from typing import Literal, Self
+from typing import Self
 
 from .models import Status, Transfer, User
 from .money import Money
 from .values import BankAccount, PhoneNumber
 
 type DbPath = str | PathLike[str]
-type LedgerKind = Literal["deposit", "transfer_out", "transfer_in", "refund", "adjustment"]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -30,6 +28,10 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     last_login    TEXT
 );
+CREATE TABLE IF NOT EXISTS accounts (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    balance INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0)
+);
 CREATE TABLE IF NOT EXISTS transfers (
     id           INTEGER PRIMARY KEY,
     sender_id    INTEGER NOT NULL REFERENCES users(id),
@@ -39,15 +41,6 @@ CREATE TABLE IF NOT EXISTS transfers (
     status       TEXT NOT NULL,
     created_at   TEXT NOT NULL,
     settled_at   TEXT
-);
-CREATE TABLE IF NOT EXISTS ledger (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
-    agorot      INTEGER NOT NULL,
-    kind        TEXT NOT NULL,
-    transfer_id INTEGER REFERENCES transfers(id),
-    note        TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL
 );
 """
 
@@ -128,34 +121,35 @@ class UserRepo:
         self.conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (_iso(when), user_id))
 
 
-class LedgerRepo:
+class AccountRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def add(
-        self,
-        user_id: int,
-        amount: Money,
-        *,
-        kind: LedgerKind,
-        created_at: datetime,
-        transfer_id: int | None = None,
-        note: str = ""
-    ) -> None:
-        self.conn.execute(
-            "INSERT INTO ledger (user_id, agorot, kind, transfer_id, note, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, amount.agorot, kind, transfer_id, note, _iso(created_at))
-        )
+    def open(self, user_id: int) -> None:
+        self.conn.execute("INSERT INTO accounts (user_id, balance) VALUES (?, 0)", (user_id,))
 
     def balance(self, user_id: int) -> Money:
-        """Derived, never stored: the sum of the user's ledger entries."""
-
         (agorot,) = self.conn.execute(
-            "SELECT COALESCE(SUM(agorot), 0) FROM ledger WHERE user_id = ?", (user_id,)
+            "SELECT balance FROM accounts WHERE user_id = ?", (user_id,)
         ).fetchone()
 
         return Money(agorot)
+
+    def credit(self, user_id: int, amount: Money) -> None:
+        self.conn.execute(
+            "UPDATE accounts SET balance = balance + ? WHERE user_id = ?",
+            (amount.agorot, user_id)
+        )
+
+    def debit(self, user_id: int, amount: Money) -> bool:
+        """Takes ``amount`` if the balance covers it, in one statement. Returns whether it did."""
+
+        cur = self.conn.execute(
+            "UPDATE accounts SET balance = balance - ? WHERE user_id = ? AND balance >= ?",
+            (amount.agorot, user_id, amount.agorot)
+        )
+
+        return cur.rowcount == 1
 
 
 class TransferRepo:
@@ -204,39 +198,6 @@ class TransferRepo:
             (user_id, Status.PENDING)
         )
 
-    def last_pending_of(self, sender_id: int) -> Transfer | None:
-        """The sender's most recently created pending transfer (DESIGN.md §12).
-
-        Ordered by id, the insertion order: timestamps can tie, ids can't (bug S3).
-        """
-
-        row = self.conn.execute(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = ? ORDER BY id DESC LIMIT 1",
-            (sender_id, Status.PENDING)
-        ).fetchone()
-
-        return _transfer(row) if row else None
-
-    def accepted_to(self, user_id: int) -> list[Transfer]:
-        return self._list(
-            "SELECT * FROM transfers WHERE recipient_id = ? AND status = ? ORDER BY id",
-            (user_id, Status.ACCEPTED)
-        )
-
-    def accepted_from(self, user_id: int) -> list[Transfer]:
-        return self._list(
-            "SELECT * FROM transfers WHERE sender_id = ? AND status = ? ORDER BY id",
-            (user_id, Status.ACCEPTED)
-        )
-
-    def of(self, user_id: int) -> list[Transfer]:
-        """Every transfer the user sent or received, in any status."""
-
-        return self._list(
-            "SELECT * FROM transfers WHERE sender_id = ? OR recipient_id = ? ORDER BY id",
-            (user_id, user_id)
-        )
-
     def _list(self, sql: str, params: tuple[object, ...]) -> list[Transfer]:
         return [_transfer(row) for row in self.conn.execute(sql, params)]
 
@@ -250,7 +211,7 @@ class UnitOfWork:
 
     conn: sqlite3.Connection
     users: UserRepo
-    ledger: LedgerRepo
+    accounts: AccountRepo
     transfers: TransferRepo
 
     def __init__(self, db_path: DbPath) -> None:
@@ -262,7 +223,7 @@ class UnitOfWork:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("BEGIN IMMEDIATE")
         self.users = UserRepo(self.conn)
-        self.ledger = LedgerRepo(self.conn)
+        self.accounts = AccountRepo(self.conn)
         self.transfers = TransferRepo(self.conn)
 
         return self

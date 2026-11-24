@@ -1,7 +1,7 @@
 """The adapter between PeerPay and the bank (DESIGN.md §1).
 
 PeerPay speaks Money; the bank speaks Decimal shekels. This module is the only code that knows
-both, so no unit gets lost between them (bug S5).
+both, so no unit gets lost between them (bug C2).
 """
 
 from decimal import Decimal

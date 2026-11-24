@@ -48,7 +48,7 @@ def api(db_path: Path, bank: MockBank, clock: FakeClock) -> Iterator[PeerPayAPI]
 
 @pytest.fixture
 def tokens(api: PeerPayAPI) -> dict[str, str]:
-    """Registers Dana, Yossi and Noa (users 1, 2 and 3), and logs them in. Returns {name: token}."""
+    """Registers Dana, Yossi and Noa, and logs them in. Returns {name: token}."""
 
     result: dict[str, str] = {}
 

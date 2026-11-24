@@ -1,4 +1,4 @@
-"""Validation of whole requests (DESIGN.md §2, §4, §7).
+"""Validation of whole requests (DESIGN.md §2, §3, §6).
 
 A request is parsed into value objects in one go, and every problem in it is reported at once.
 Each call collects into a list of its own, so nothing leaks from one request into the next

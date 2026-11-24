@@ -1,4 +1,4 @@
-"""Value objects (DESIGN.md §2, §4): if one exists, it is valid.
+"""Value objects (DESIGN.md §2, §3): if one exists, it is valid.
 
 Text from the outside world is parsed into these at the edge (the API). Everything inside works
 with values that cannot be malformed, so a check can't be forgotten in one of several places.
@@ -38,7 +38,7 @@ class PhoneNumber:
         return cls(re.sub(r"[\s-]", "", text))
 
     def masked(self) -> str:
-        """``05*-***-4567``, for display. A new string: the number itself never changes (bug C6)."""
+        """``05*-***-4567``, for display. A new string: the number itself never changes (bug C5)."""
 
         return f"{self.digits[:2]}*-***-{self.digits[-4:]}"
 
@@ -48,7 +48,7 @@ class PhoneNumber:
 
 @dataclass(frozen=True, slots=True)
 class Note:
-    """The free text attached to a transfer, at most ``MAX_NOTE`` characters (bug C5)."""
+    """The free text attached to a transfer, at most ``MAX_NOTE`` characters (bug C4)."""
 
     text: str = ""
 

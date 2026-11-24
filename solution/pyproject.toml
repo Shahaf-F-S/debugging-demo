@@ -5,4 +5,4 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["peerpay", "tools", "tests", "check.py", "seed.py", "demo.py"]
+files = ["peerpay", "tests", "check.py", "demo.py"]

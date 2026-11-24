@@ -1,4 +1,4 @@
-"""Every error the service can raise (DESIGN.md §6).
+"""Every error the service can raise (DESIGN.md §5).
 
 The API's error boundary (``api.endpoint``) turns each of them into an error response with the
 error's ``code``; anything else that escapes is an unexpected bug and is reported as such.
@@ -70,19 +70,12 @@ class TransferExpired(WalletError):
         super().__init__(f"transfer #{transfer_id} has expired")
 
 
-class NothingToCancel(WalletError):
-    code = "nothing_to_cancel"
-
-    def __init__(self) -> None:
-        super().__init__("you have no pending transfer to cancel")
-
-
 class TopUpFailed(WalletError):
     code = "top_up_failed"
 
 
 class InvalidTransition(WalletError):
-    """A transfer was asked to change status in a way DESIGN.md §5 doesn't allow."""
+    """A transfer was asked to change status in a way DESIGN.md §4 doesn't allow."""
 
     code = "invalid_transition"
 

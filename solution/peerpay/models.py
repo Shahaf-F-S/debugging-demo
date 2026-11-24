@@ -1,7 +1,7 @@
-"""The data PeerPay works with, and the rules that belong to it (DESIGN.md §5).
+"""The data PeerPay works with, and the rules that belong to it (DESIGN.md §4).
 
-Entities are immutable: a change produces a new object, which is then saved explicitly. Nothing
-can change an object behind its owner's back (bugs C6 and S4).
+Entities are immutable: a change produces a new object, which is then saved explicitly, so
+nothing can change an object behind its owner's back (bug C5).
 """
 
 from dataclasses import dataclass, replace
@@ -13,21 +13,13 @@ from .errors import InvalidTransition
 from .money import Money
 from .values import BankAccount, PhoneNumber
 
-EXPIRY = timedelta(days=30)                     # the only definition of "a month" (bug C4)
+EXPIRY = timedelta(days=30)                     # the only definition of "a month" (bug S3)
 
 
 class Status(StrEnum):
     PENDING = "PENDING"
     ACCEPTED = "ACCEPTED"
-    DECLINED = "DECLINED"
-    CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
-
-
-# The state machine: which status may follow which. A settled transfer never changes again.
-ALLOWED: dict[Status, frozenset[Status]] = {
-    Status.PENDING: frozenset({Status.ACCEPTED, Status.DECLINED, Status.CANCELLED, Status.EXPIRED})
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,17 +52,14 @@ class Transfer:
     def is_expired(self, now: datetime) -> bool:
         return now >= self.expires_at
 
-    def moved_to(self, status: Status, at: datetime) -> Self:
-        """Returns this transfer in its new status, settled ``at``.
+    def settled(self, status: Status, at: datetime) -> Self:
+        """Returns this transfer settled with ``status`` at ``at``.
 
-        Raises InvalidTransition for a change that ``ALLOWED`` doesn't list, e.g. accepting a
-        transfer that was already cancelled.
+        Only a PENDING transfer can be settled, and only once: anything else raises
+        InvalidTransition (accepting an expired transfer, accepting twice, ...).
         """
 
-        if status not in ALLOWED.get(self.status, frozenset()):
+        if self.status is not Status.PENDING or status is Status.PENDING:
             raise InvalidTransition(self.status, status)
 
         return replace(self, status=status, settled_at=at)
-
-    def other_party(self, user_id: int) -> int:
-        return self.recipient_id if user_id == self.sender_id else self.sender_id

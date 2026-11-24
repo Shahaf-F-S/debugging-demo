@@ -2,7 +2,7 @@
 
 A ``Money`` is an exact, immutable int number of agorot in one currency. It refuses floats, is
 created from text in exactly one way (``Money.parse``), and only combines with Money of the same
-currency. That makes the float family (bug S2) and the unit family (bug S5) hard to write.
+currency. That makes the float family (bug S2) and the unit family (bug C2) hard to write.
 """
 
 from dataclasses import dataclass, replace

@@ -1,8 +1,8 @@
 """The PeerPay API: one method per request, each returning a JSON-ready dict.
 
-Text from the outside world becomes value objects and commands here, at the edge. Errors become
-responses in exactly one place, the ``@endpoint`` decorator (DESIGN.md §6): a method returns its
-payload or raises, and never builds an error response itself.
+Text from the outside world becomes value objects here, at the edge. Errors become responses in
+exactly one place, the ``@endpoint`` decorator (DESIGN.md §5): a method returns its payload or
+raises, and never builds an error response itself (bug S1).
 """
 
 import functools
@@ -15,10 +15,9 @@ from . import auth
 from .bank import BankAdapter
 from .bank_gateway import MockBank
 from .clock import SystemClock
-from .commands import SendTransfer, TopUp
 from .errors import NotLoggedIn, WalletError
-from .events import EventBus, Notifier, wire_notifications
 from .money import Money
+from .notifier import Notifier
 from .repository import DbPath, create_schema
 from .service import Clock, WalletService
 from .validation import parse_send, positive
@@ -66,13 +65,10 @@ class PeerPayAPI:
         clock: Clock | None = None
     ) -> None:
         create_schema(db_path)
-        self.clock: Clock = clock or SystemClock()
         self.notifier = Notifier()
-        bus = EventBus()
-        wire_notifications(bus, self.notifier)
         self.wallet = WalletService(
             db_path, BankAdapter(bank or MockBank(db_path)),
-            clock=self.clock, bus=bus
+            clock=clock or SystemClock(), notifier=self.notifier
         )
         self._sessions: dict[str, int] = {}             # token -> user id
 
@@ -105,19 +101,14 @@ class PeerPayAPI:
 
     @endpoint
     def top_up(self, token: str, amount_text: str) -> Response:
-        self.wallet.top_up(TopUp(self._user_id(token), positive(Money.parse(amount_text))))
+        self.wallet.top_up(self._user_id(token), positive(Money.parse(amount_text)))
 
         return {}
 
     @endpoint
     def send(self, token: str, phone: str, amount_text: str, note: str = "") -> Response:
         user_id = self._user_id(token)
-        request = parse_send(phone, amount_text, note)
-        transfer = self.wallet.send(
-            SendTransfer(
-                user_id, recipient=request.recipient, amount=request.amount, note=request.note
-            )
-        )
+        transfer = self.wallet.send(user_id, parse_send(phone, amount_text, note))
 
         return {"transfer_id": transfer.id, "message": "Sent ✓"}
 
@@ -128,6 +119,7 @@ class PeerPayAPI:
                 {
                     "id": item.transfer.id,
                     "from": item.sender_name,
+                    "phone": item.sender_phone,
                     "amount": str(item.transfer.amount),
                     "note": item.transfer.note,
                     "expires_at": item.transfer.expires_at.isoformat()
@@ -143,33 +135,11 @@ class PeerPayAPI:
         return {}
 
     @endpoint
-    def decline(self, token: str, transfer_id: int) -> Response:
-        self.wallet.decline(self._user_id(token), transfer_id)
-
-        return {}
-
-    @endpoint
-    def cancel_last(self, token: str) -> Response:
-        return {"transfer_id": self.wallet.cancel_last(self._user_id(token)).id}
-
-    @endpoint
-    def statement(self, token: str) -> Response:
-        statement = self.wallet.statement(self._user_id(token))
-
-        return {
-            "received_count": statement.received_count,
-            "received_total": str(statement.received_total),
-            "sent_count": statement.sent_count,
-            "sent_total": str(statement.sent_total),
-            "lines": statement.lines
-        }
-
-    @endpoint
     def notifications(self, token: str) -> Response:
         return {"messages": self.notifier.messages_for(self._user_id(token))}
 
     @endpoint
     def run_expiry(self) -> Response:
-        """The nightly job (DESIGN.md §5). Called by the scheduler, not by users."""
+        """The nightly job (DESIGN.md §4). Called by the scheduler, not by users."""
 
         return {"expired": self.wallet.expire_pending()}

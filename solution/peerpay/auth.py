@@ -41,7 +41,7 @@ def register(
     bank_account: str,
     password: str
 ) -> int:
-    """Registers a user and returns the new user id.
+    """Registers a user with an empty wallet and returns the new user id.
 
     Raises one ValidationError listing every problem of the request. The slow hashing is done
     before the transaction starts, so the database isn't locked while it runs.
@@ -57,6 +57,7 @@ def register(
         user = uow.users.add(
             form.phone, form.name, form.bank_account, password_hash=password_hash
         )
+        uow.accounts.open(user.id)
 
     return user.id
 

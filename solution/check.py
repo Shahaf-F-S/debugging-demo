@@ -4,10 +4,8 @@
     python check.py other.db
 
 Invariants (amounts in agorot):
-  [1] each stored balance equals the sum of that user's ledger entries        (DESIGN.md §3)
-  [2] wallets + pending transfers == deposits + support adjustments          (money is conserved)
-  [3] the bank log (shekels × 100) equals the deposits in the ledger         (reconciliation, §1)
-  [4] every stored phone number looks like 05XXXXXXXX                         (§2)
+  [1] money is conserved: wallets + pending transfers == what the bank pulled × 100   (§1, §3)
+  [2] every stored phone number looks like 05XXXXXXXX                               (§2, §7)
 """
 
 import re
@@ -32,49 +30,16 @@ def check(db_path: str | PathLike[str]) -> list[str]:
         conn.close()
 
 
-def _one(conn: sqlite3.Connection, sql: str) -> int:
-    value: int = conn.execute(sql).fetchone()[0]
-
-    return value
-
-
 def _problems(conn: sqlite3.Connection) -> list[str]:
     problems: list[str] = []
     tables = {
         name for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
     }
-
-    if "accounts" in tables:                    # a stored balance exists: it must match the ledger
-        rows = conn.execute(
-            "SELECT a.user_id, a.balance,"
-            " COALESCE((SELECT SUM(l.agorot) FROM ledger l WHERE l.user_id = a.user_id), 0)"
-            " FROM accounts a ORDER BY a.user_id"
-        )
-
-        for user_id, balance, ledger_total in rows:
-            if balance != ledger_total:
-                problems.append(
-                    f"[1] user {user_id}: stored balance {balance} != ledger total {ledger_total}"
-                )
-
-        wallets = _one(conn, "SELECT COALESCE(SUM(balance), 0) FROM accounts")
-
-    else:                                       # the balance is derived from the ledger
-        wallets = _one(conn, "SELECT COALESCE(SUM(agorot), 0) FROM ledger")
-
-    pending = _one(
-        conn, "SELECT COALESCE(SUM(agorot), 0) FROM transfers WHERE status = 'PENDING'"
-    )
-    deposits = _one(conn, "SELECT COALESCE(SUM(agorot), 0) FROM ledger WHERE kind = 'deposit'")
-    adjustments = _one(
-        conn, "SELECT COALESCE(SUM(agorot), 0) FROM ledger WHERE kind = 'adjustment'"
-    )
-
-    if wallets + pending != deposits + adjustments:
-        problems.append(
-            f"[2] wallets {wallets} + pending {pending} != deposits {deposits}"
-            f" + adjustments {adjustments}"
-        )
+    wallets: int = conn.execute("SELECT COALESCE(SUM(balance), 0) FROM accounts").fetchone()[0]
+    pending: int = conn.execute(
+        "SELECT COALESCE(SUM(agorot), 0) FROM transfers WHERE status = 'PENDING'"
+    ).fetchone()[0]
+    pulled = Decimal(0)
 
     if "bank_log" in tables:
         pulled = sum(
@@ -82,15 +47,14 @@ def _problems(conn: sqlite3.Connection) -> list[str]:
             Decimal(0)
         )
 
-        if pulled * 100 != deposits:
-            problems.append(
-                f"[3] the bank pulled {pulled * 100} agorot,"
-                f" but the ledger has {deposits} in deposits"
-            )
+    if wallets + pending != pulled * 100:
+        problems.append(
+            f"[1] wallets {wallets} + pending {pending} != {pulled * 100} pulled from the bank"
+        )
 
     for user_id, phone in conn.execute("SELECT id, phone FROM users ORDER BY id"):
         if not PHONE_RE.fullmatch(phone):
-            problems.append(f"[4] user {user_id}: stored phone number {phone!r} is not 05XXXXXXXX")
+            problems.append(f"[2] user {user_id}: stored phone number {phone!r} is not 05XXXXXXXX")
 
     return problems
 
