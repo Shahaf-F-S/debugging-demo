@@ -1,7 +1,6 @@
 """PeerPay use cases (DESIGN.md §3, §4, §7, §8). Amounts are int agorot."""
 
 from datetime import timedelta
-from decimal import Decimal
 
 from .bank_gateway import BankError
 from .errors import (
@@ -35,7 +34,7 @@ class WalletService:
         user = self.users.get(user_id)
 
         try:
-            self.bank.pull(user.bank_account, Decimal(amount) / 100)
+            self.bank.pull(user.bank_account, amount)
 
         except BankError as e:
             raise TopUpFailed(str(e)) from e
