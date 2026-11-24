@@ -1,4 +1,5 @@
-"""The data PeerPay works with, and the rules that belong to it."""
+"""The data PeerPay works with, and the rules that belong to it. Entities are immutable:
+a change is a new object, saved explicitly."""
 import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -24,7 +25,7 @@ ALLOWED = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class User:
     id: int
     phone: PhoneNumber
@@ -32,12 +33,6 @@ class User:
     bank_account: BankAccount
     password_hash: str
     last_login: datetime | None = None
-
-
-@dataclass
-class Account:
-    user_id: int
-    balance: Money
 
 
 @dataclass(frozen=True)

@@ -41,6 +41,5 @@ def login(wallet, phone, password) -> int:
     if user is None or not verify_password(password, user.password_hash):   # slow: outside the transaction
         raise LoginFailed()
     with wallet.uow() as uow:
-        user.last_login = wallet.clock()
-        uow.users.save(user)
+        uow.users.touch_last_login(user.id, wallet.clock())
     return user.id
